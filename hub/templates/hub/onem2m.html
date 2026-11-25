@@ -1,0 +1,40 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}oneM2M{% endblock %}
+{% block content %}
+<h1><span class="ico"><svg><use href="#i-plug"/></svg></span>oneM2M interworking</h1>
+<p class="lead">The hub is a oneM2M <b>Application Entity</b>. It registers in any oneM2M CSE (ACME, OM2M, Mobius …) over the standard HTTP binding,
+publishes every device's health, issues and prediction as <b>contentInstances</b>, and receives field readings through CSE <b>subscriptions</b> —
+so other oneM2M applications can use the hub's intelligence, and devices on a oneM2M platform can feed it.</p>
+<div class="kpis">
+  <div class="kpi"><span>CSE</span><strong style="font-size:14px;line-height:1.4">{% if configured %}{{ cse }}{% else %}not set{% endif %}</strong><small>ONEM2M_CSE</small></div>
+  <div class="kpi"><span>AE</span><strong style="font-size:16px">{{ ae }}</strong><small>originator {{ origin }}</small></div>
+  <div class="kpi"><span>Last publish</span><strong style="font-size:16px">{% if last %}{{ last.instances }} instances{% else %}—{% endif %}</strong><small>{% if last %}{{ last.at }}{% else %}manage.py onem2m_push{% endif %}</small></div>
+  <div class="kpi"><span>Notifications received</span><strong>{{ inbox|length }}</strong><small>POST /onem2m/notify</small></div>
+</div>
+<div class="grid g2" style="margin-top:16px">
+  <section class="card"><h2>Resource tree in the CSE</h2>
+<pre class="mono" style="font-size:13px;line-height:1.55;margin:0;white-space:pre-wrap">&lt;CSE base&gt;
+└─ {{ ae }}                    AE   api Nuih.teknovate · rr=true · poa {{ poa|default:"(ONEM2M_POA)" }}
+   ├─ energy                   container
+   │   └─ DT-10 …              container per transformer
+   │       └─ status           container (mni 50)
+   │           └─ cin          {health, online, issues, prediction{p_overload_7d_pct, days_to_nameplate}, as_of}
+   ├─ water / W4 … / status    {health, issues, dry_runs, overflows}
+   ├─ solar / PV-2-INV01 … / status   {status, pr30, pr7, issues}
+   └─ meters / AL-INT-305 … / status  {mhi, band, failure_window, issues}   (critical meters)</pre>
+  </section>
+  <section class="card"><h2>Connect a CSE</h2>
+    <ol style="margin:0;padding-left:18px;line-height:1.7">
+      <li>Run a CSE, e.g. ACME: <span class="mono">http://127.0.0.1:8080/cse-in</span> (OM2M: <span class="mono">http://host:8080/~/in-cse/in-name</span>).</li>
+      <li>In <span class="mono">.env</span>: <span class="mono">ONEM2M_CSE</span>, optional <span class="mono">ONEM2M_ORIGIN</span>, and <span class="mono">ONEM2M_POA</span> = this hub's <span class="mono">/onem2m/notify</span> URL.</li>
+      <li><span class="mono">manage.py onem2m_push</span> — creates the AE and containers, posts one contentInstance per device (re-run on a schedule).</li>
+      <li><span class="mono">manage.py onem2m_push --subscribe &lt;path&gt;</span> — subscribes the hub to a field gateway's container; its readings arrive below.</li>
+    </ol>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">Primitives: X-M2M-Origin, X-M2M-RI, X-M2M-RVI {{ "3" }}, Content-Type application/json;ty=2 (AE) / 3 (container) / 4 (contentInstance) / 23 (subscription). The status documents are also at <a href="/api/v1/onem2m">/api/v1/onem2m</a>.</p>
+  </section>
+</div>
+<h2 style="margin:18px 0 8px">Notifications received</h2>
+<div class="table-wrap"><table><thead><tr><th>Received</th><th>Subscription</th><th>From</th><th>Content</th></tr></thead>
+<tbody>{% for n in inbox %}<tr><td>{{ n.received|date:"d M H:i:s" }}</td><td class="mono" style="font-size:12px">{{ n.sur }}</td><td>{{ n.origin }}</td><td class="mono" style="font-size:12px">{{ n.con|truncatechars:160 }}</td></tr>
+{% empty %}<tr><td colspan="4" class="muted">None yet — subscribe the hub to a container in the CSE.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

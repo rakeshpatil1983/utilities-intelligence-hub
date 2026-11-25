@@ -141,3 +141,42 @@ class PageTests(SimpleTestCase):
     def test_no_login_anywhere(self):
         self.assertNotIn("django.contrib.auth", settings.INSTALLED_APPS)
         self.assertNotIn("/login", self.client.get("/").content.decode())
+
+
+class OneM2MTests(SimpleTestCase):
+    def test_push_builds_resource_tree(self):
+        from unittest import mock
+        from django.test import override_settings
+        from . import onem2m
+        calls = []
+
+        def fake_post(self, url, headers=None, data=None, timeout=None):
+            import json as _j
+            calls.append((url, headers, _j.loads(data)))
+            assert headers["X-M2M-Origin"] and headers["X-M2M-RI"] and headers["X-M2M-RVI"] == "3"
+            r = mock.Mock(status_code=201, text=""); r.headers = {"X-M2M-RSC": "2001"}
+            return r
+        with override_settings(ONEM2M_CSE="http://cse.test/cse-in", ONEM2M_METERS=5), \
+                mock.patch("requests.Session.post", fake_post):
+            n = onem2m.push(log=lambda *_: None)
+        self.assertGreater(n, 20)
+        ae = calls[0]
+        self.assertEqual(ae[0], "http://cse.test/cse-in")
+        self.assertTrue(ae[1]["Content-Type"].endswith("ty=2"))
+        self.assertEqual(ae[2]["m2m:ae"]["rn"], "UtilitiesHub")
+        cins = [c for c in calls if c[1]["Content-Type"].endswith("ty=4")]
+        self.assertEqual(len(cins), n)
+        self.assertTrue(any("/UtilitiesHub/energy/DT-" in c[0] and c[0].endswith("/status") for c in cins))
+        self.assertIn("health", json.loads(cins[0][2]["m2m:cin"]["con"]))
+
+    def test_notify_endpoint(self):
+        v = self.client.post("/onem2m/notify", data=json.dumps({"m2m:sgn": {"vrq": True, "sur": "/cse-in/x/sub"}}),
+                             content_type="application/json")
+        self.assertEqual(v["X-M2M-RSC"], "2000")
+        body = {"m2m:sgn": {"sur": "/cse-in/gw/W4/sub", "nev": {"net": 3, "rep": {"m2m:cin": {"ri": "cin123", "con": {"pump": 1, "tank": 40}}}}}}
+        r = self.client.post("/onem2m/notify", data=json.dumps(body), content_type="application/json", HTTP_X_M2M_ORIGIN="Cgateway")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["X-M2M-RSC"], "2000")
+        page = self.client.get("/onem2m/")
+        self.assertContains(page, "tank")
+        self.assertEqual(self.client.get("/api/v1/onem2m").status_code, 200)

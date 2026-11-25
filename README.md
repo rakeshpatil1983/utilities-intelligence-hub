@@ -46,8 +46,25 @@ The live water sync needs an account on that platform: set `WATER_API_USERNAME` 
 * **AI suggestions**: OpenRouter (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL` in `.env`) over the KPIs and findings — brief per
   utility / asset and free questions; rule-based fallback when unavailable.
 
+## oneM2M interworking
+The hub is a oneM2M **Application Entity** (TS-0001 resource model, TS-0004 primitives, TS-0009 HTTP binding), see `hub/onem2m.py`:
+
+```
+<CSE base>/UtilitiesHub (AE)/<energy|water|solar|meters> (cnt)/<device> (cnt)/status (cnt, mni 50)/<cin>
+cin.con = {"health", "issues", "prediction"/"dry_runs"/"pr30"/"failure_window", "as_of"}
+```
+
+* `manage.py onem2m_push` registers the AE in `ONEM2M_CSE` (ACME, OM2M, Mobius …), creates the containers and posts one
+  contentInstance per device (31 transformers, 7 water controllers, 12 solar blocks, critical meters). Re-run on a schedule.
+* `manage.py onem2m_push --subscribe <path>` subscribes the hub to a container a field gateway writes to; the CSE sends
+  `m2m:sgn` notifications to `POST /onem2m/notify` (answered with `X-M2M-RSC: 2000`), listed on the `/oneM2M` page.
+* `/api/v1/onem2m` shows the resource tree and the status documents.
+
+Settings (`.env`): `ONEM2M_CSE` (e.g. `http://127.0.0.1:8080/cse-in`), `ONEM2M_ORIGIN` (`CUtilitiesHub`), `ONEM2M_AE`,
+`ONEM2M_RVI` (`3`), `ONEM2M_POA` (this hub's `/onem2m/notify` URL as the CSE sees it), `ONEM2M_METERS`.
+
 ## Open API
-`/api/v1/summary` · `/api/v1/assets?utility=` · `/api/v1/findings?utility=&severity=&code=` · `/api/v1/assets/<id>/series?days=7` · `/api/v1/meters?band=&cat=&feeder=&dt=&q=` · `/api/v1/meters/<no>` · `/api/v1/transformers` · `/api/v1/solar`
+`/api/v1/summary` · `/api/v1/assets?utility=` · `/api/v1/findings?utility=&severity=&code=` · `/api/v1/assets/<id>/series?days=7` · `/api/v1/meters?band=&cat=&feeder=&dt=&q=` · `/api/v1/meters/<no>` · `/api/v1/transformers` · `/api/v1/solar` · `/api/v1/onem2m`
 
 ## Tests
 ```bash

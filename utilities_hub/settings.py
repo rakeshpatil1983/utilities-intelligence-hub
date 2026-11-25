@@ -68,3 +68,11 @@ METER_DIR = DATA_DIR / "meters"
 
 # Solar plants and inverter blocks.
 SOLAR_FLEET = Path(os.environ.get("SOLAR_FLEET", DATA_DIR / "source" / "solar_fleet.json"))
+
+# oneM2M: the hub as an Application Entity in a CSE (ACME, OM2M, Mobius ...), HTTP binding.
+ONEM2M_CSE = os.environ.get("ONEM2M_CSE", "")                  # e.g. http://127.0.0.1:8080/cse-in  (ACME)  or  http://host:8080/~/in-cse/in-name (OM2M)
+ONEM2M_ORIGIN = os.environ.get("ONEM2M_ORIGIN", "CUtilitiesHub")
+ONEM2M_AE = os.environ.get("ONEM2M_AE", "UtilitiesHub")
+ONEM2M_RVI = os.environ.get("ONEM2M_RVI", "3")
+ONEM2M_POA = os.environ.get("ONEM2M_POA", "")                  # this hub's notify URL as the CSE sees it, e.g. http://192.168.29.221:8030/onem2m/notify
+ONEM2M_METERS = int(os.environ.get("ONEM2M_METERS", "200"))    # critical meters published

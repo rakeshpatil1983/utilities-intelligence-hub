@@ -523,3 +523,37 @@ def solar_block_view(request, inv_id):
     pred = _pred_solar(b)
     return render(request, "hub/solar_block.html", {"nav": "solar", "b": b, "plant": plant, "pred": pred, "pred_json": _jsonable(pred["chart"]),
                   "health": max(0, 100 - sum(solar.PEN.get(i["severity"], 5) for i in b["issues"])), "worst": worst})
+
+
+# ── oneM2M interworking ──────────────────────────────────────────────────────
+
+def onem2m_view(request):
+    from . import onem2m
+    return render(request, "hub/onem2m.html", {"nav": "onem2m", "configured": onem2m.configured(), "cse": settings.ONEM2M_CSE,
+                  "ae": settings.ONEM2M_AE, "origin": settings.ONEM2M_ORIGIN, "poa": settings.ONEM2M_POA,
+                  "last": onem2m.last_push(), "inbox": onem2m.inbox(30)})
+
+
+from django.views.decorators.csrf import csrf_exempt  # noqa: E402
+
+
+@csrf_exempt
+def onem2m_notify(request):
+    """oneM2M notification target (m2m:sgn), HTTP binding: reply 200 with X-M2M-RSC."""
+    from django.http import HttpResponse
+    from . import onem2m
+    if request.method != "POST":
+        return JsonResponse({"onem2m": "POST m2m:sgn notifications here"})
+    try:
+        body = json.loads(request.body or "{}")
+    except ValueError:
+        r = HttpResponse(status=400); r["X-M2M-RSC"] = "4000"; return r
+    rsc = onem2m.ingest(body, request.headers)
+    r = HttpResponse(status=200); r["X-M2M-RSC"] = rsc; r["X-M2M-RI"] = request.headers.get("X-M2M-RI", "")
+    return r
+
+
+def api_onem2m(request):
+    from . import onem2m
+    return JsonResponse({"resource_tree": f"{settings.ONEM2M_CSE or '<CSE>'}/{settings.ONEM2M_AE}/<utility>/<device>/status",
+                         "last_push": onem2m.last_push(), "devices": onem2m.device_status()}, json_dumps_params={"default": str})

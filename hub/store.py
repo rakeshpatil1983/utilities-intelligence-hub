@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS water_live (asset_id VARCHAR, ts TIMESTAMP, device_id
 CREATE TABLE IF NOT EXISTS water_devices (device_id INTEGER PRIMARY KEY, device_type VARCHAR, kind VARCHAR,
     tank_level DOUBLE, pump VARCHAR, last_update TIMESTAMP, synced_at TIMESTAMP);
 CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR);
+CREATE TABLE IF NOT EXISTS onem2m_inbox (received TIMESTAMP, sur VARCHAR, origin VARCHAR, ri VARCHAR, con VARCHAR);
 """
 
 
