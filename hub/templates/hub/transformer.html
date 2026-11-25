@@ -18,6 +18,8 @@
   <button data-tab="summary">Summary</button><button data-tab="readings">Load &amp; voltage</button>{% if fc %}<button data-tab="forecast">Load forecast</button>{% endif %}<button data-tab="energy">Energy per day</button>{% if fc %}<button data-tab="capacity">Capacity plan</button>{% endif %}{% if d.outlook %}<button data-tab="predictive">Predictive</button>{% endif %}<button data-tab="issues">Issues &amp; evidence ({{ a.findings|length }})</button><button data-tab="ask">Ask AI</button>
 </div>
 <div class="dpane" data-pane="summary">
+{% if om %}<section class="card" style="margin-bottom:14px;border-left:4px solid var(--meters)"><h2>Latest reading via oneM2M <span class="sub">· {{ om.origin }} → /cse-in/FieldGateway/energy/{{ a.asset_id }}/readings · {{ om.ct|date:"d M H:i" }}</span></h2>
+  <p style="margin:0;font-size:15px">{{ om.data.kw|default:"—" }} kW · {{ om.data.kva|default:"—" }} kVA · V {{ om.data.v_rn|default:"—" }} / {{ om.data.v_yn|default:"—" }} / {{ om.data.v_bn|default:"—" }} · I {{ om.data.i_r|default:"—" }} / {{ om.data.i_y|default:"—" }} / {{ om.data.i_b|default:"—" }} A · neutral {{ om.data.i_n|default:"—" }} A · {{ om.data.freq|default:"—" }} Hz <span class="muted">({{ om.data.source }}, reading {{ om.data.ts }})</span></p></section>{% endif %}
 <section class="card"><h2>Phase balance · last 7 days</h2>
 {% with p=d.phase %}{% if p %}
   <div class="pb-bar" style="height:14px;max-width:none">{% for s in p.shares %}<i class="pb-{{ forloop.counter }}" style="width:{{ s }}%"></i>{% endfor %}</div>

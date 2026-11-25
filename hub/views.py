@@ -191,7 +191,9 @@ def asset_view(request, asset_id):
                                    ("ph_any", "pH"), ("float", "float switch")) if sig["history"][k]]
         pred = _pred_water(a)
         chart["pred"] = pred["chart"]
+        from . import onem2m
         return render(request, "hub/asset.html", {"nav": "water", "a": a, "sig": sig, "measures": measures, "pred": pred,
+                                                  "om": onem2m.latest_reading("water", asset_id),
                                                   "pump_kw": settings.PUMP_KW, "tariff": settings.TARIFF_RS_KWH, "chart": _jsonable(chart)})
     return render(request, "hub/asset.html", {"nav": a["utility"], "a": a, "chart": _jsonable(chart)})
 
@@ -465,7 +467,9 @@ def transformer_view(request, asset_id):
                    "day": [str(r["day"]) for r in dd], "kwh": [round(r["kwh"], 1) for r in dd],
                    "fc_day": [str(f["day"]) for f in a["forecast"]], "fc_kwh": [f["kwh"] for f in a["forecast"]],
                    "rated_a": a["rated_a"], "v_lo": analytics.V_LO, "v_hi": analytics.V_HI}
+    from . import onem2m
     return render(request, "hub/transformer.html", {"nav": "energy", "a": a, "d": d, "fc": fc, "outlook": outlook,
+                                                    "om": onem2m.latest_reading("energy", asset_id),
                                                     "chart": _jsonable(chart)})
 
 
@@ -531,7 +535,7 @@ def onem2m_view(request):
     from . import onem2m
     return render(request, "hub/onem2m.html", {"nav": "onem2m", "configured": onem2m.configured(), "cse": settings.ONEM2M_CSE,
                   "ae": settings.ONEM2M_AE, "origin": settings.ONEM2M_ORIGIN, "poa": settings.ONEM2M_POA,
-                  "last": onem2m.last_push(), "inbox": onem2m.inbox(30)})
+                  "last": onem2m.last_push(), "inbox": onem2m.inbox(30), "inflow": onem2m.inflow(40), "istats": onem2m.inflow_stats()})
 
 
 from django.views.decorators.csrf import csrf_exempt  # noqa: E402
@@ -557,3 +561,30 @@ def api_onem2m(request):
     from . import onem2m
     return JsonResponse({"resource_tree": f"{settings.ONEM2M_CSE or '<CSE>'}/{settings.ONEM2M_AE}/<utility>/<device>/status",
                          "last_push": onem2m.last_push(), "devices": onem2m.device_status()}, json_dumps_params={"default": str})
+
+
+
+@csrf_exempt
+def onem2m_cse(request, rest=""):
+    """Built-in oneM2M CSE endpoint (HTTP binding, subset): field gateways post readings here."""
+    from django.http import HttpResponse
+    from . import onem2m
+    path = "/cse-in" + ("/" + rest.strip("/") if rest else "")
+    ri = request.headers.get("X-M2M-RI", "")
+    if request.method == "POST":
+        origin, ct = request.headers.get("X-M2M-Origin"), request.headers.get("Content-Type", "")
+        if not origin or not ri or ";ty=" not in ct:
+            status, rsc, doc = 400, "4000", {"m2m:dbg": "X-M2M-Origin, X-M2M-RI and Content-Type ...;ty=<n> required"}
+        else:
+            try:
+                body = json.loads(request.body or "{}")
+                status, rsc, doc = onem2m.cse_create(path, int(ct.split("ty=")[1].split(";")[0]), body, origin)
+            except (ValueError, KeyError):
+                status, rsc, doc = 400, "4000", {"m2m:dbg": "bad request body"}
+    elif request.method == "GET":
+        status, rsc, doc = onem2m.cse_retrieve(path)
+    else:
+        status, rsc, doc = 405, "4005", {"m2m:dbg": "operation not allowed"}
+    r = HttpResponse(json.dumps(doc, default=str), status=status, content_type="application/json")
+    r["X-M2M-RSC"], r["X-M2M-RI"], r["X-M2M-RVI"] = rsc, ri, "3"
+    return r

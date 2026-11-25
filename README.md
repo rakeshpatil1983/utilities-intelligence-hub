@@ -1,6 +1,6 @@
 # Utilities Intelligence Hub
 
-Team Teknovate · 2026 oneM2M Hackathon
+Team Teknovate · 2026 oneM2M Hackathon · **oneM2M-compliant data path** (see [oneM2M compliance](#onem2m-compliance))
 
 One Django dashboard for **distribution transformers**, **consumer smart meters**, **solar plants** and **drinking-water supply**: every asset is scored from its own
 readings, issues are listed with the evidence rows behind them, and AI suggestions turn the findings into a work plan.
@@ -10,7 +10,7 @@ readings, issues are listed with the evidence rows behind them, and AI suggestio
 ```bash
 .venv/bin/python manage.py runserver 0.0.0.0:8030      # or ./run.sh
 ```
-Pages: `/` overview · `/energy/` (energy · transformers) · `/transformer/<DT-xx>/` · `/meters/` · `/meter/<no>/` · `/solar/` · `/solar/block/<id>/` · `/water/` · `/asset/<id>/` · `/alerts/` · `/ai/` · `/api/`.
+Pages: `/` overview · `/onem2m/` (oneM2M inflow) · `/energy/` (energy · transformers) · `/transformer/<DT-xx>/` · `/meters/` · `/meter/<no>/` · `/solar/` · `/solar/block/<id>/` · `/water/` · `/asset/<id>/` · `/alerts/` · `/ai/` · `/api/`.
 
 Every section lists its devices worst-first with quick-filter chips (current and predicted issues); a device opens on the right with tabs (summary, readings, forecast, predictive, evidence, AI).
 
@@ -46,22 +46,44 @@ The live water sync needs an account on that platform: set `WATER_API_USERNAME` 
 * **AI suggestions**: OpenRouter (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL` in `.env`) over the KPIs and findings — brief per
   utility / asset and free questions; rule-based fallback when unavailable.
 
-## oneM2M interworking
-The hub is a oneM2M **Application Entity** (TS-0001 resource model, TS-0004 primitives, TS-0009 HTTP binding), see `hub/onem2m.py`:
+## oneM2M compliance
+**This is a oneM2M-compliant project:** device data reaches the hub as standard oneM2M primitives, and the hub's results
+are published back into oneM2M. It follows the oneM2M resource model (TS-0001), primitives (TS-0004) and HTTP binding
+(TS-0009): `X-M2M-Origin`, `X-M2M-RI`, `X-M2M-RVI: 3`, `Content-Type: application/json;ty=<n>`, response codes in `X-M2M-RSC`.
 
+### Data inflow (devices → oneM2M → hub)
 ```
-<CSE base>/UtilitiesHub (AE)/<energy|water|solar|meters> (cnt)/<device> (cnt)/status (cnt, mni 50)/<cin>
-cin.con = {"health", "issues", "prediction"/"dry_runs"/"pr30"/"failure_window", "as_of"}
+Field gateway AE (CFieldGateway)
+  POST /onem2m/cse-in                                  ty=2  m2m:ae   FieldGateway
+  POST /onem2m/cse-in/FieldGateway/<utility>/<device>  ty=3  m2m:cnt  readings
+  POST .../<device>/readings                           ty=4  m2m:cin  {"ts","kw","kva","v_rn",…}  (every 15 min)
+Hub reads  GET .../<device>/readings/la  → latest reading (m2m:cin)
 ```
+* `manage.py onem2m_gateway` is the field-gateway role: it posts each device's latest reading (31 transformers, 7 water
+  controllers, 12 solar blocks) as a contentInstance. Target: `ONEM2M_INFLOW_CSE` — the hub's built-in endpoint
+  (`/onem2m/cse-in`) by default, or any external CSE.
+* The built-in endpoint implements the oneM2M CSE operations the hub needs: CREATE of AE (ty 2), container (ty 3) and
+  contentInstance (ty 4) and RETRIEVE of a resource, `/la` and `/ol`, with standard response codes
+  (2000, 2001, 4000, 4004, 4105). For a full CSE (ACME, OM2M, Mobius) set `ONEM2M_INFLOW_CSE` / `ONEM2M_CSE`.
+* Readings that arrive over oneM2M show on every transformer and water device ("Latest reading via oneM2M"), on the
+  `/onem2m/` page and in the sidebar.
+* `POST /onem2m/notify` accepts `m2m:sgn` notifications (incl. verification requests) from CSE subscriptions.
 
-* `manage.py onem2m_push` registers the AE in `ONEM2M_CSE` (ACME, OM2M, Mobius …), creates the containers and posts one
-  contentInstance per device (31 transformers, 7 water controllers, 12 solar blocks, critical meters). Re-run on a schedule.
-* `manage.py onem2m_push --subscribe <path>` subscribes the hub to a container a field gateway writes to; the CSE sends
-  `m2m:sgn` notifications to `POST /onem2m/notify` (answered with `X-M2M-RSC: 2000`), listed on the `/oneM2M` page.
+### Publishing (hub → oneM2M)
+```
+<CSE base>/UtilitiesHub (AE)/<energy|water|solar|meters>/<device>/status/<cin>
+cin.con = {"health", "issues", "prediction" | "dry_runs" | "pr30" | "failure_window", "as_of"}
+```
+* `manage.py onem2m_push` registers the AE in `ONEM2M_CSE`, creates the container tree and posts one status contentInstance
+  per device so other oneM2M applications can use the hub's health and predictions.
+* `manage.py onem2m_push --subscribe <path>` subscribes the hub to a container in an external CSE (notifications to `/onem2m/notify`).
 * `/api/v1/onem2m` shows the resource tree and the status documents.
 
-Settings (`.env`): `ONEM2M_CSE` (e.g. `http://127.0.0.1:8080/cse-in`), `ONEM2M_ORIGIN` (`CUtilitiesHub`), `ONEM2M_AE`,
-`ONEM2M_RVI` (`3`), `ONEM2M_POA` (this hub's `/onem2m/notify` URL as the CSE sees it), `ONEM2M_METERS`.
+Settings (`.env`): `ONEM2M_INFLOW_CSE`, `ONEM2M_CSE` (e.g. `http://127.0.0.1:8080/cse-in`), `ONEM2M_ORIGIN` (`CUtilitiesHub`),
+`ONEM2M_AE`, `ONEM2M_RVI` (`3`), `ONEM2M_POA` (this hub's `/onem2m/notify` URL as the CSE sees it), `ONEM2M_METERS`.
+
+Scope: the built-in endpoint covers the operations above (no access-control policies, groups or discovery); the project
+has not been through oneM2M certification testing. Code: `hub/onem2m.py`, `hub/management/commands/onem2m_*.py`.
 
 ## Open API
 `/api/v1/summary` · `/api/v1/assets?utility=` · `/api/v1/findings?utility=&severity=&code=` · `/api/v1/assets/<id>/series?days=7` · `/api/v1/meters?band=&cat=&feeder=&dt=&q=` · `/api/v1/meters/<no>` · `/api/v1/transformers` · `/api/v1/solar` · `/api/v1/onem2m`

@@ -23,4 +23,9 @@ def common(request):
                         "solar": f(c["solar"]["recorded_as_of"]) if "solar" in c else None}
     except Exception:
         ctx["clock"] = None
+    try:
+        from . import onem2m
+        ctx["om_in"] = onem2m.inflow_stats()
+    except Exception:
+        ctx["om_in"] = None
     return ctx

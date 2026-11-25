@@ -76,3 +76,4 @@ ONEM2M_AE = os.environ.get("ONEM2M_AE", "UtilitiesHub")
 ONEM2M_RVI = os.environ.get("ONEM2M_RVI", "3")
 ONEM2M_POA = os.environ.get("ONEM2M_POA", "")                  # this hub's notify URL as the CSE sees it, e.g. http://192.168.29.221:8030/onem2m/notify
 ONEM2M_METERS = int(os.environ.get("ONEM2M_METERS", "200"))    # critical meters published
+ONEM2M_INFLOW_CSE = os.environ.get("ONEM2M_INFLOW_CSE", "http://127.0.0.1:8030/onem2m/cse-in")   # where the field gateway posts readings

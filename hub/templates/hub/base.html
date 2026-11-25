@@ -237,6 +237,7 @@ body.embed main{padding:14px 18px 28px}body.embed h1{font-size:22px;margin-top:0
       <span>Data to <b>{{ status.energy_as_of|date:"d M Y H:i" }}</b></span>
       {% if clock %}<span class="clock-note" title="Energy: STMU readings measured to {{ clock.energy_measured|date:'d M Y H:i' }}, then each unit carried forward on its own weekday × 15-minute profile. Smart meters recorded {{ clock.meters.0|date:'d M Y' }} – {{ clock.meters.1|date:'d M Y' }}, water {{ clock.water.0|date:'M Y' }} – {{ clock.water.1|date:'M Y' }} and solar to {{ clock.solar|date:'d M Y' }}: replayed so the latest reading is today.">Energy measured to {{ clock.energy_measured|date:"d M" }}, then extended from each unit's profile · meters, water, solar replayed to today ⓘ</span>{% endif %}
       <span><b>{{ status.meters_n|num:0 }}</b> smart meters</span>
+      {% if om_in and om_in.n %}<a href="/onem2m/" style="color:inherit;text-decoration:none"><span class="live"><i></i>oneM2M inflow · {{ om_in.devices }} devices · {{ om_in.last|date:"H:i" }}</span></a>{% endif %}
       <span class="live {% if not status.water_live %}off{% endif %}"><i></i>Water {% if status.water_live %}live{% else %}history · live sync off{% endif %}</span>
       {% endif %}
       <button class="theme-btn" onclick="toggleTheme()"><svg><use href="#i-moon"/></svg><span id="theme-label">Dark mode</span></button>

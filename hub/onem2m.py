@@ -139,3 +139,95 @@ def last_push():
     from . import store
     v = store.get_meta("onem2m_push")
     return json.loads(v) if v else None
+
+
+# ── built-in CSE endpoint (subset): field gateways post readings to the hub in oneM2M ──────────
+# Supported: CREATE (POST) of AE (ty=2), container (ty=3), contentInstance (ty=4); RETRIEVE (GET) of a
+# resource, its latest (/la) and oldest (/ol) contentInstance. Resource paths are under /onem2m/cse-in.
+KEYS = {2: "m2m:ae", 3: "m2m:cnt", 4: "m2m:cin"}
+CSE_BASE = "/cse-in"
+
+
+def _res(path):
+    from . import store
+    r = store.query("SELECT * FROM onem2m_res WHERE path = ? ORDER BY ct DESC LIMIT 1", [path])
+    return r[0] if r else None
+
+
+def _doc(r):
+    d = {"rn": r["rn"], "ri": r["ri"], "pi": r["parent"], "ty": r["ty"], "ct": r["ct"].strftime("%Y%m%dT%H%M%S"),
+         "lbl": json.loads(r["lbl"] or "[]")}
+    if r["ty"] == 4:
+        d |= {"cnf": "application/json:0", "con": r["con"]}
+    if r["ty"] == 2:
+        d |= {"aei": r["origin"], "api": r["con"]}
+    return {KEYS.get(r["ty"], "m2m:cb"): d}
+
+
+def cse_create(path, ty, body, origin):
+    """Returns (http_status, rsc, document)."""
+    from . import store
+    path = "/" + path.strip("/")
+    if path != CSE_BASE and not _res(path):
+        return 404, "4004", {"m2m:dbg": f"parent {path} not found"}
+    key = KEYS.get(ty)
+    if not key or key not in (body or {}):
+        return 400, "4000", {"m2m:dbg": "unsupported resource type"}
+    b = body[key]
+    now = datetime.now()
+    rn = b.get("rn") or (f"cin_{now:%Y%m%d%H%M%S%f}" if ty == 4 else None)
+    if not rn:
+        return 400, "4000", {"m2m:dbg": "rn required"}
+    child = f"{path}/{rn}"
+    if ty != 4 and _res(child):
+        return 409, "4105", {"m2m:dbg": f"{child} already exists"}
+    con = b.get("con") if ty == 4 else b.get("api", "")
+    if isinstance(con, (dict, list)):
+        con = json.dumps(con)
+    ri = uuid.uuid4().hex[:16]
+    with store.connect() as c:
+        c.execute("INSERT INTO onem2m_res VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  [ri, child, path, ty, rn, now, origin, con, json.dumps(b.get("lbl") or [])])
+    return 201, "2001", _doc(_res(child))
+
+
+def cse_retrieve(path):
+    from . import store
+    path = "/" + path.strip("/")
+    if path == CSE_BASE:
+        return 200, "2000", {"m2m:cb": {"rn": "cse-in", "ri": "id-in", "csi": "/id-in", "cst": 1, "srt": [2, 3, 4]}}
+    if path.endswith("/la") or path.endswith("/ol"):
+        parent, order = path[:-3], "DESC" if path.endswith("/la") else "ASC"
+        r = store.query(f"SELECT * FROM onem2m_res WHERE parent = ? AND ty = 4 ORDER BY ct {order} LIMIT 1", [parent])
+        return (200, "2000", _doc(r[0])) if r else (404, "4004", {"m2m:dbg": "no contentInstance"})
+    r = _res(path)
+    return (200, "2000", _doc(r)) if r else (404, "4004", {"m2m:dbg": f"{path} not found"})
+
+
+def inflow(limit=40):
+    """Readings that arrived as contentInstances in a /readings container."""
+    from . import store
+    return store.query("SELECT ct, origin, parent, con FROM onem2m_res WHERE ty = 4 AND parent LIKE '%/readings' "
+                       "ORDER BY ct DESC LIMIT ?", [limit])
+
+
+def inflow_stats():
+    from . import store
+    r = store.query("SELECT count(*) AS n, count(DISTINCT parent) AS devices, max(ct) AS last FROM onem2m_res "
+                    "WHERE ty = 4 AND parent LIKE '%/readings'")[0]
+    return r
+
+
+def latest_reading(utility, device):
+    """Latest reading for a device that came in over oneM2M (any gateway AE)."""
+    from . import store
+    r = store.query("SELECT ct, origin, con FROM onem2m_res WHERE ty = 4 AND parent LIKE ? ORDER BY ct DESC LIMIT 1",
+                    [f"%/{utility}/{device}/readings"])
+    if not r:
+        return None
+    x = r[0]
+    try:
+        x["data"] = json.loads(x["con"])
+    except (TypeError, ValueError):
+        x["data"] = {}
+    return x

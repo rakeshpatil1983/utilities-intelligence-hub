@@ -1,10 +1,22 @@
 {% extends "hub/base.html" %}{% load hub %}
 {% block crumb %}oneM2M{% endblock %}
 {% block content %}
-<h1><span class="ico"><svg><use href="#i-plug"/></svg></span>oneM2M interworking</h1>
+<h1><span class="ico"><svg><use href="#i-plug"/></svg></span>oneM2M · data inflow and interworking</h1>
 <p class="lead">The hub is a oneM2M <b>Application Entity</b>. It registers in any oneM2M CSE (ACME, OM2M, Mobius …) over the standard HTTP binding,
 publishes every device's health, issues and prediction as <b>contentInstances</b>, and receives field readings through CSE <b>subscriptions</b> —
 so other oneM2M applications can use the hub's intelligence, and devices on a oneM2M platform can feed it.</p>
+<section class="card" style="border-top:4px solid var(--meters);margin-bottom:16px">
+  <h2>Data inflow over oneM2M <span class="sub">· field gateway → oneM2M CSE endpoint (/onem2m/cse-in) → hub</span></h2>
+  <div class="kpis">
+    <div class="kpi"><span>Readings received</span><strong>{{ istats.n|num:0 }}</strong><small>contentInstances in /readings containers</small></div>
+    <div class="kpi"><span>Devices reporting</span><strong>{{ istats.devices }}</strong><small>transformers, pumps, inverters</small></div>
+    <div class="kpi"><span>Last reading</span><strong style="font-size:18px">{{ istats.last|date:"d M H:i:s"|default:"—" }}</strong><small>every 15 min</small></div>
+  </div>
+  <div class="table-wrap" style="margin-top:12px;max-height:360px"><table><thead><tr><th>Received</th><th>Originator</th><th>Resource</th><th>contentInstance (con)</th></tr></thead>
+  <tbody>{% for r in inflow %}<tr><td>{{ r.ct|date:"d M H:i:s" }}</td><td>{{ r.origin }}</td><td class="mono" style="font-size:12px">{{ r.parent }}</td><td class="mono" style="font-size:12px">{{ r.con|truncatechars:150 }}</td></tr>
+  {% empty %}<tr><td colspan="4" class="muted">No readings yet — run <span class="mono">manage.py onem2m_gateway</span>.</td></tr>{% endfor %}</tbody></table></div>
+  <p class="muted" style="font-size:12px;margin:8px 0 0">Try it: <a class="mono" href="/onem2m/cse-in/FieldGateway/energy/DT-10/readings/la">GET /onem2m/cse-in/FieldGateway/energy/DT-10/readings/la</a> returns the latest reading as an m2m:cin.</p>
+</section>
 <div class="kpis">
   <div class="kpi"><span>CSE</span><strong style="font-size:14px;line-height:1.4">{% if configured %}{{ cse }}{% else %}not set{% endif %}</strong><small>ONEM2M_CSE</small></div>
   <div class="kpi"><span>AE</span><strong style="font-size:16px">{{ ae }}</strong><small>originator {{ origin }}</small></div>
