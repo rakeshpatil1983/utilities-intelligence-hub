@@ -1,0 +1,31 @@
+{% load hub %}<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+<div><h2 style="margin:0">{{ a.asset_id }} · {{ title }}</h2>
+<p class="muted" style="margin:2px 0 10px">Readings {{ start|date:"d M Y H:i" }} – {{ end|date:"d M Y H:i" }} (one hour either side shown). Out-of-limit values in red.</p></div>
+<button class="btn" onclick="closeEvidence()">Close ✕</button></div>
+<div class="table-wrap" style="max-height:60vh"><table>
+{% if a.utility == 'energy' %}
+<thead><tr><th>Time</th><th>Supply</th><th class="num">V R–N</th><th class="num">V Y–N</th><th class="num">V B–N</th><th class="num">I R</th><th class="num">I Y</th><th class="num">I B</th><th class="num">I N</th><th class="num">kW</th><th class="num">kVA</th><th class="num">PF</th><th class="num">THDv %</th><th class="num">Hz</th></tr></thead>
+<tbody>{% for r in rows %}<tr class="{% if r.ts >= start and r.ts <= end %}in{% endif %}">
+<td>{{ r.ts|date:"d M H:i" }}</td><td>{% if r.supply %}on{% else %}<b style="color:var(--bad)">OFF</b>{% endif %}</td>
+<td class="num {% if r.supply and r.v_rn < v_lo or r.v_rn > v_hi %}bad{% endif %}">{{ r.v_rn|num:1 }}</td>
+<td class="num {% if r.supply and r.v_yn < v_lo or r.v_yn > v_hi %}bad{% endif %}">{{ r.v_yn|num:1 }}</td>
+<td class="num {% if r.supply and r.v_bn < v_lo or r.v_bn > v_hi %}bad{% endif %}">{{ r.v_bn|num:1 }}</td>
+<td class="num {% if r.i_r > a.rated_a %}bad{% endif %}">{{ r.i_r|num:0 }}</td><td class="num {% if r.i_y > a.rated_a %}bad{% endif %}">{{ r.i_y|num:0 }}</td><td class="num {% if r.i_b > a.rated_a %}bad{% endif %}">{{ r.i_b|num:0 }}</td>
+<td class="num">{{ r.i_n|num:0 }}</td><td class="num">{{ r.kw|num:1 }}</td><td class="num {% if r.kva > a.rating_kva %}bad{% endif %}">{{ r.kva|num:1 }}</td>
+<td class="num {% if r.pf and r.pf < 0.85 %}bad{% endif %}">{{ r.pf|num:2 }}</td><td class="num {% if r.thd_v > 8 %}bad{% endif %}">{{ r.thd_v|num:1 }}</td><td class="num">{{ r.freq|num:2 }}</td></tr>
+{% empty %}<tr><td colspan="14" class="muted">No readings in this window.</td></tr>{% endfor %}</tbody>
+{% else %}
+<thead><tr><th>Time</th><th>Pump</th><th>Tank</th><th class="num">Tank %</th><th>Sump</th><th>Flow</th><th>Well</th><th class="num">pH</th><th class="num">Ph 1 V</th><th class="num">Ph 2 V</th><th class="num">Ph 3 V</th><th>Source</th></tr></thead>
+<tbody>{% for r in rows %}<tr class="{% if r.ts >= start and r.ts <= end %}in{% endif %}">
+<td>{{ r.ts|date:"d M Y H:i:s" }}</td><td>{% if r.pump == 1 %}<b>ON</b>{% elif r.pump == 0 %}OFF{% else %}—{% endif %}</td>
+<td>{{ r.tank_raw|default:"—" }}</td><td class="num {% if r.pump == 1 and r.tank_pct >= 100 %}bad{% endif %}">{{ r.tank_pct|num:0 }}</td>
+<td class="{% if r.pump == 1 and r.sump == 'empty' %}bad{% endif %}">{{ r.sump|default:"—" }}</td>
+<td class="{% if r.pump == 1 and 'dry' in r.flow|default:'' %}bad{% endif %}">{{ r.flow|default:"—" }}</td><td>{{ r.well|default:"—" }}</td>
+<td class="num {% if r.ph is not None and r.ph < 6.5 or r.ph > 8.5 %}bad{% endif %}">{{ r.ph|num:2 }}</td>
+<td class="num {% if r.pump == 1 and r.v1 is not None and r.v1 < 100 %}bad{% endif %}">{{ r.v1|num:0 }}</td>
+<td class="num {% if r.pump == 1 and r.v2 is not None and r.v2 < 100 %}bad{% endif %}">{{ r.v2|num:0 }}</td>
+<td class="num {% if r.pump == 1 and r.v3 is not None and r.v3 < 100 %}bad{% endif %}">{{ r.v3|num:0 }}</td><td class="muted">{{ r.src }}</td></tr>
+{% empty %}<tr><td colspan="12" class="muted">No readings in this window.</td></tr>{% endfor %}</tbody>
+{% endif %}
+</table></div>
+<p class="muted" style="font-size:12px;margin-top:8px">{{ rows|length }} readings{% if rows|length >= 400 %} (first 400){% endif %}.</p>

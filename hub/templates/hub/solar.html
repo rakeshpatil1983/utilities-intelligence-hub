@@ -1,0 +1,69 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Solar{% endblock %}
+{% block content %}
+<h1><span class="ico" style="--tint:var(--solar-tint);--uink:var(--solar-ink)"><svg><use href="#i-sun"/></svg></span>Solar · plants and inverter blocks</h1>
+{% if not sol %}<div class="notice">The solar fleet is not loaded. Place <span class="mono">data/source/solar_fleet.json</span>.</div>{% else %}
+<p class="lead">{{ s.plants }} solar plants ({{ s.mw_ac|num:1 }} MW AC, {{ s.blocks }} inverter blocks read over Modbus): plants connected through their own step-up transformer at the
+substation bus, and plants straight onto 11 kV feeders. Every block is checked for trips, insulation faults, string losses, cooling, curtailment, communication and anti-islanding.</p>
+<div class="kpis">
+  <div class="kpi"><span>Running</span><strong>{{ s.running }}<small> / {{ s.blocks }}</small></strong><small>inverter blocks</small></div>
+  <div class="kpi"><span>Output now</span><strong>{{ s.mw_now|num:1 }}<small> MW</small></strong><small>{{ s.mwh_today|num:1 }} MWh today</small></div>
+  <div class="kpi"><span>Performance ratio</span><strong>{{ s.pr30|num:1 }}<small> %</small></strong><small>30-day average</small></div>
+  <div class="kpi"><span>Issues</span><strong class="h-bad">{{ s.issues }}</strong><small>{{ s.critical }} critical</small></div>
+  <div class="kpi"><span>Plant transformer alarms</span><strong>{{ sol.tx_alarms }}</strong><small>step-up transformers</small></div>
+  <div class="kpi"><span>Solar health</span><strong class="h-{% if s.health >= 80 %}good{% elif s.health >= 50 %}warn{% else %}bad{% endif %}">{{ s.health }}<small> / 100</small></strong></div>
+</div>
+<div class="qf" style="--qf-on:var(--solar)">
+  <button class="btn chip on" data-f="all">All</button>
+  <button class="btn chip" data-f="critical">Critical</button>
+  <button class="btn chip" data-f="predicted">Predicted loss · 30 days</button>
+  <button class="btn chip" data-f="down">Not running</button>
+  <button class="btn chip" data-f="anti_islanding ov_trip">Grid trips / anti-islanding</button>
+  <button class="btn chip" data-f="iso_fault string_fault">Insulation &amp; string faults</button>
+  <button class="btn chip" data-f="over_temp">Overheating</button>
+  <button class="btn chip" data-f="soiling">Soiling</button>
+  <button class="btn chip" data-f="sldc_curtail">Curtailed</button>
+  <button class="btn chip" data-f="no_comms">Not reporting</button>
+</div>
+<div class="md" style="--accent:var(--solar)">
+  <div class="md-left">
+    <input class="md-search" placeholder="Search block, plant or issue…">
+    <span class="md-count"><b>{{ blocks|length }}</b> inverter blocks · worst first</span>
+    <div class="md-list">{% for b in blocks %}
+      <button class="md-item {% if b.severity == 'critical' %}critical{% elif b.issues %}warning{% else %}good{% endif %}" data-id="{{ b.inv_id }}" data-src="/solar/block/{{ b.inv_id }}/" data-tags="{% for x in b.issues %}{{ x.code|lower }} {% if x.severity == 'critical' %}critical {% endif %}{% endfor %}{% if b.status != 'running' %}down{% endif %} {{ ptags|get:b.inv_id }}">
+        <div class="r1"><b>{{ b.inv_id }}</b>{% if b.status == 'running' %}<span class="health good">running</span>{% else %}<span class="health bad">{{ b.status }}</span>{% endif %}</div>
+        <div class="sub">{{ b.consumer }}</div>
+        <div class="sub">{{ b.kw_now|num:0 }} kW now · PR {{ b.pr30|num:1 }} % · availability {{ b.availability }} %</div>
+        <div class="chipline">{% for x in b.issues|slice:":2" %}<span class="sev {% if x.severity == 'critical' or x.severity == 'warning' %}{{ x.severity }}{% else %}info{% endif %}">{{ x.label }}</span>{% endfor %}</div>
+      </button>{% endfor %}</div>
+  </div>
+  <div class="md-right"><iframe title="Inverter block insights"></iframe></div>
+</div>
+<h2 style="margin:22px 0 8px">Fleet view</h2>
+<div class="grid g2">
+  <section class="card"><h2>Energy by plant <span class="sub">· MWh, last 30 days</span></h2><div class="chart"><canvas id="c-plant"></canvas></div></section>
+  <section class="card"><h2>Performance ratio by block <span class="sub">· %, 30 days — solid: no issue · outlined: warning · red: critical</span></h2><div class="chart"><canvas id="c-pr"></canvas></div></section>
+</div>
+<div class="section-head"><h2>Plants</h2></div>
+<div class="grid g3">{% for p in sol.plants %}
+  <section class="card" style="border-top:4px solid var(--solar)">
+    <h2 style="margin-bottom:4px">{{ p.plant }} <span class="sub">· {% if p.tx %}DT-level · {{ p.tx.mva }} MVA {{ p.tx.ratio }} step-up{% else %}feeder-level{% endif %}</span></h2>
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi"><span>Monitored blocks</span><strong>{{ p.kw_now|num:0 }}<small> kW</small></strong><small>{{ p.n }} block{{ p.n|pluralize }}</small></div>
+      <div class="kpi"><span>Today</span><strong>{{ p.today_kwh|num:0 }}<small> kWh</small></strong></div>
+      <div class="kpi"><span>Issues</span><strong{% if p.issues %} class="h-bad"{% endif %}>{{ p.issues|default:0 }}</strong></div>
+    </div>
+    {% if p.tx.latest %}<p class="legend-note">Plant transformer: {{ p.tx.latest.load_pct|num:0 }} % load · top oil {{ p.tx.latest.oti|num:0 }} °C (expected {{ p.tx.latest.oti_exp|num:0 }}) · oil {{ p.tx.latest.oil_level|num:0 }} %</p>{% endif %}
+  </section>{% endfor %}</div>
+{{ charts|json_script:"charts" }}
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if sol %}<script>
+const C = UH.data('charts');
+UH.master();
+UH.chart('c-plant', {type:'bar', data:{labels:C.plants.p, datasets:[{label:'MWh, 30 days', data:C.plants.mwh, backgroundColor:UH.solar}]}});
+UH.chart('c-pr', {type:'bar', data:{labels:C.pr.id, datasets:[{label:'PR %', data:C.pr.pr30,
+  backgroundColor:C.pr.sev.map(s => s === 'critical' ? UH.critical : s === 'warning' ? UH.alpha(UH.solar, .35) : UH.solar),
+  borderColor:C.pr.sev.map(s => s === 'warning' ? UH.solar : 'transparent'), borderWidth:2}]},
+  options:{scales:{y:{min:0, max:100}}, plugins:{tooltip:{callbacks:{afterLabel:c => C.pr.sev[c.dataIndex] === 'ok' ? 'no issue' : C.pr.sev[c.dataIndex]}}}}});
+</script>{% endif %}{% endblock %}

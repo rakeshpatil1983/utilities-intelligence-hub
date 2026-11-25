@@ -1,0 +1,171 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}{{ a.utility|title }} · {{ a.asset_id }}{% endblock %}
+{% block kind %}asset-{{ a.utility }}{% endblock %}
+{% block content %}
+<p class="muted back-link" style="margin:0"><a href="/{{ a.utility }}/">← {{ a.utility|title }}</a></p>
+<h1><span class="ico" style="--tint:var(--{{ a.utility }}-tint);--uink:var(--{{ a.utility }}-ink)"><svg><use href="#{% if a.utility == 'energy' %}i-zap{% else %}i-drop{% endif %}"/></svg></span>{{ a.asset_id }} · {{ a.kind }}</h1>
+<p class="lead">{% if a.utility == 'energy' %}{{ a.rating_kva }} kVA · readings {{ a.first_seen|date:"d M Y" }} – {{ a.last_seen|date:"d M Y H:i" }}{% else %}{{ a.readings|num:0 }} readings · {{ a.first_seen|date:"d M Y" }} – {{ a.last_seen|date:"d M Y H:i" }} · {{ a.source }}{% endif %}</p>
+<div class="kpis">
+  <div class="kpi"><span>Health</span><strong class="h-{{ a.health|health_class }}">{{ a.health }} <small>/ 100</small></strong><small>{{ a.findings|length }} issue{{ a.findings|length|pluralize }}</small></div>
+  {% if a.utility == 'energy' %}
+  <div class="kpi"><span>Peak load</span><strong>{{ a.load_pk|pct }}</strong><small>{{ a.peak_kva|num:0 }} kVA</small></div>
+  <div class="kpi"><span>Energy 30 d</span><strong>{{ a.kwh|num:0 }} kWh</strong></div>
+  <div class="kpi"><span>Power factor</span><strong>{{ a.pf|num:2 }}</strong></div>
+  <div class="kpi"><span>Unbalance</span><strong>{{ a.unbal|pct }}</strong></div>
+  <div class="kpi"><span>Neutral current</span><strong>{{ a.in_ratio|pct }}</strong><small>of phase current</small></div>
+  <div class="kpi"><span>Supply</span><strong>{{ a.avail|pct }}</strong></div>
+  {% else %}
+  {% if sig.pump %}
+  <div class="kpi"><span>Pump now</span><strong>{% if a.pump_now == 1 %}ON{% elif a.pump_now == 0 %}OFF{% else %}—{% endif %}</strong></div>
+  <div class="kpi"><span>Run-time</span><strong>{{ a.runtime_day|num:1 }}<small> h/day</small></strong><small>{{ a.starts_day|num:1 }} starts/day</small></div>
+  <div class="kpi"><span>Dry runs</span><strong{% if a.dry_runs %} class="h-bad"{% endif %}>{{ a.dry_runs }}</strong><small>{{ a.window }}</small></div>
+  <div class="kpi"><span>Pump energy (est.)</span><strong>{{ a.pump_kwh|num:0 }}<small> kWh</small></strong></div>
+  {% endif %}
+  {% if sig.tank %}<div class="kpi"><span>Tank</span><strong>{% if a.tank_now is not None %}{{ a.tank_now|num:0 }}<small> %</small>{% else %}—{% endif %}</strong><small>last reading</small></div>{% endif %}
+  {% if sig.ph or sig.ph_any %}<div class="kpi"><span>pH</span><strong>{{ a.ph_now|num:1 }}</strong><small>safe 6.5–8.5</small></div>{% endif %}
+  <div class="kpi"><span>Measures</span><strong style="font-size:14px;line-height:1.45">{{ measures|join:" · " }}</strong></div>
+  {% endif %}
+</div>
+
+{% if a.utility == 'energy' %}
+<div class="dtabs" style="--accent:var(--energy)">
+  <button data-tab="summary">Summary</button><button data-tab="readings">Load &amp; voltage</button><button data-tab="forecast">Energy &amp; forecast</button><button data-tab="predictive">Predictive</button><button data-tab="issues">Issues &amp; evidence ({{ a.findings|length }})</button><button data-tab="ask">Ask AI</button>
+</div>
+<div class="dpane" data-pane="summary">
+  <section class="ai-card"><h2>AI suggestions · {{ a.asset_id }}</h2><div id="brief"><span class="spinner"></span> Reading this asset's data…</div></section>
+  <section class="card" style="margin-top:14px"><h2>Top issues <span class="sub">· <a href="/transformer/{{ a.asset_id }}/">transformer intelligence: forecast, capacity plan, outlook →</a></span></h2>
+  {% for f in a.findings|slice:":4" %}<p style="margin:6px 0"><span class="sev {{ f.severity }}">{{ f.severity }}</span> <b>{{ f.title }}</b> <span class="muted">· {{ f.value }}</span><br><span style="font-size:13px">{{ f.action }}</span></p>{% empty %}<p class="muted">No issues found.</p>{% endfor %}</section>
+</div>
+<div class="dpane" data-pane="readings"><div class="grid g2">
+  <section class="card"><h2>Load, last 7 days (kW)</h2><div class="chart"><canvas id="c1"></canvas></div></section>
+  <section class="card"><h2>Phase-to-neutral voltage (V)</h2><div class="chart"><canvas id="c2"></canvas></div></section>
+  <section class="card"><h2>Phase and neutral current (A)</h2><div class="chart"><canvas id="c3"></canvas></div></section>
+</div></div>
+<div class="dpane" data-pane="predictive">
+{% if fc %}<div class="kpis">
+  <div class="kpi"><span>Highest peak · next 7 days</span><strong class="{% if fc.max_peak_pct >= 100 %}h-bad{% endif %}">{{ fc.max_peak_pct|num:0 }} %</strong><small>of {{ a.rating_kva }} kVA nameplate</small></div>
+  <div class="kpi"><span>Chance of overload</span><strong class="{% if fc.max_p_overload >= 50 %}h-bad{% elif fc.max_p_overload >= 30 %}h-warn{% endif %}">{{ fc.max_p_overload }} %</strong><small>worst day in the next 7</small></div>
+  <div class="kpi"><span>Load growth</span><strong>{{ fc.growth_pct|num:1 }}<small> %/yr</small></strong></div>
+  <div class="kpi"><span>Passes nameplate</span><strong class="{% if d.first_over_month %}h-warn{% endif %}">{% if d.first_over_month %}{{ d.first_over_month.month|date:"M Y" }}{% else %}not in 12 mo{% endif %}</strong></div>
+</div>
+<section class="card" style="margin-top:14px"><h2>Daily peak · next 7 days</h2>
+  <div class="days">{% for x in fc.days %}<div class="{% if x.p_overload >= 50 %}hot{% elif x.p_overload >= 20 %}warm{% endif %}">{{ x.day|date:"D d M" }}<b>{{ x.peak_pct|num:0 }} %</b>{{ x.peak_kva }} kVA<br>P(overload) {{ x.p_overload }} %</div>{% endfor %}</div>
+  <p class="pnote">Weekday × 15-minute profile of the last 4 weeks; back-tested daily-peak error {{ fc.mape_pct|num:1 }} %.</p></section>{% endif %}
+{% if outlook %}<h2 style="margin:16px 0 4px">Five-month outlook</h2><p class="pnote" style="margin:0 0 10px">Temperatures are estimated from load (IEC 60076-7); the STMU does not measure them.</p>
+<div class="grid g3">{% for key, g in outlook %}
+  <section class="card"><h2>{{ g.label }}</h2><div class="chart" style="height:200px"><canvas id="po-{{ key }}"></canvas></div>
+    <div class="gstats"><div><span>Now</span><b>{{ g.now|num:1 }}{% if key == 'load' %} %{% else %} °C{% endif %}</b></div>
+      <div><span>Alarm {{ g.warn|num:0 }}</span><b class="{% if g.days_warn %}h-warn{% endif %}">{% if g.days_warn %}in {{ g.days_warn }} d{% else %}not in a year{% endif %}</b>{% if g.date_warn %}<small>{{ g.date_warn|date:"d M Y" }}</small>{% endif %}</div></div></section>
+{% endfor %}</div>{% endif %}
+{% if not fc and not outlook %}<p class="muted">Not enough recent readings on this unit to forecast.</p>{% endif %}
+</div>
+<div class="dpane" data-pane="forecast">
+  <section class="card"><h2>Energy per day and next 7 days forecast (kWh)</h2><div class="chart" style="height:320px"><canvas id="c4"></canvas></div></section>
+</div>
+{% else %}
+<div class="dtabs" style="--accent:var(--water)">
+  <button data-tab="summary">Summary</button>{% if sig.pump or sig.tank %}<button data-tab="pump">Pump &amp; tank</button>{% endif %}{% if sig.dry or sig.volts or sig.ph_any or sig.float %}<button data-tab="supply">Water, supply &amp; quality</button>{% endif %}<button data-tab="predictive">Predictive</button><button data-tab="issues">Issues &amp; evidence ({{ a.findings|length }})</button><button data-tab="ask">Ask AI</button>
+</div>
+<div class="dpane" data-pane="summary">
+  <section class="ai-card"><h2>AI suggestions · {{ a.asset_id }}</h2><div id="brief"><span class="spinner"></span> Reading this asset's data…</div></section>
+  <section class="card" style="margin-top:14px"><h2>Top issues</h2>
+  {% for f in a.findings|slice:":4" %}<p style="margin:6px 0"><span class="sev {{ f.severity }}">{{ f.severity }}</span> <b>{{ f.title }}</b> <span class="muted">· {{ f.value }}</span><br><span style="font-size:13px">{{ f.action }}</span></p>{% empty %}<p class="muted">No issues found.</p>{% endfor %}</section>
+</div>
+<div class="dpane" data-pane="pump"><div class="grid g2">
+  {% if sig.pump or sig.tank %}<section class="card"><h2>{% if sig.pump %}Pump state{% if sig.tank %} and tank level{% endif %}{% else %}Tank level{% endif %} <span class="sub">· <span id="win"></span></span></h2>
+    {% if sig.pump %}<div class="chart" style="height:{% if sig.tank %}70{% else %}220{% endif %}px"><canvas id="c1p" aria-label="Pump on / off"></canvas></div>{% endif %}
+    {% if sig.tank %}<div class="chart" style="height:190px"><canvas id="c1" aria-label="Tank level %"></canvas></div>{% endif %}</section>{% endif %}
+  {% if sig.pump %}<section class="card"><h2>Pump run-time per day <span class="sub">· hours</span></h2><div class="chart"><canvas id="c4"></canvas></div></section>{% endif %}
+</div></div>
+<div class="dpane" data-pane="predictive">
+<div class="kpis">
+  <div class="kpi"><span>Dry runs · next 30 days</span><strong class="{% if pred.dry30 >= 1 %}h-bad{% endif %}">{{ pred.dry30|num:0 }}</strong><small>at the recorded rate</small></div>
+  <div class="kpi"><span>Overflows · next 30 days</span><strong class="{% if pred.over30 >= 1 %}h-warn{% endif %}">{{ pred.over30|num:0 }}</strong><small>pump on, tank full</small></div>
+  <div class="kpi"><span>Pump energy · 30 days</span><strong>{{ pred.kwh30|num:0 }}<small> kWh</small></strong><small>₹ {{ pred.cost30|num:0 }}</small></div>
+  <div class="kpi"><span>Wasted on faults · 30 days</span><strong class="{% if pred.waste30 %}h-warn{% endif %}">{{ pred.waste30|num:1 }}<small> kWh</small></strong><small>₹ {{ pred.waste_cost30|num:0 }} dry run + overflow</small></div>
+</div>
+<section class="card" style="margin-top:14px"><h2>Pump hours per day · next 7 days</h2><div class="chart"><canvas id="c-pred"></canvas></div>
+  <p class="pnote">Bars: recorded pump days. Projection for the 7 days from today = average of the last 14 active days ({{ pred.run_avg }} h/day). Rates are from {{ pred.days }} days of readings; {{ pump_kw }} kW pump, ₹ {{ tariff }}/kWh.</p></section>
+{% if a.findings %}<section class="card" style="margin-top:14px"><h2>If nothing is done</h2>
+{% for f in a.findings|slice:":3" %}<p style="margin:6px 0"><span class="sev {{ f.severity }}">{{ f.severity }}</span> <b>{{ f.title }}</b> keeps recurring — {{ f.why|default:f.value }}</p>{% endfor %}</section>{% endif %}
+</div>
+<div class="dpane" data-pane="supply"><div class="grid g2">
+  {% if sig.dry %}<section class="card"><h2>Water at the pump <span class="sub">· flow / sump status — dry = no water</span></h2><div class="chart" style="height:160px"><canvas id="c5"></canvas></div></section>{% endif %}
+  {% if sig.volts %}<section class="card"><h2>Supply phase voltages at the pump <span class="sub">· V, lowest while pumping</span></h2><div class="chart"><canvas id="c2"></canvas></div></section>{% endif %}
+  {% if sig.ph_any %}<section class="card"><h2>Water pH <span class="sub">· <span class="winx"></span></span></h2><div class="chart"><canvas id="c3"></canvas></div>
+    <p class="legend-note">Readings of 0 or off-scale are a dead / dry probe and are left out of the line.</p></section>{% endif %}
+  {% if sig.float %}<section class="card"><h2>Float switch <span class="sub">· full / empty</span></h2><div class="chart" style="height:160px"><canvas id="c6"></canvas></div></section>{% endif %}
+</div></div>
+{% endif %}
+<div class="dpane" data-pane="issues">
+{% with findings=a.findings %}{% include "hub/partials/findings.html" %}{% endwith %}
+</div>
+<div class="dpane" data-pane="ask">
+<section class="ai-card"><h2>Ask about {{ a.asset_id }}</h2>
+  <form id="ask" style="display:flex;gap:8px"><input name="q" placeholder="Ask about {{ a.asset_id }}…" style="flex:1;padding:8px 10px;border-radius:8px;border:none;font:inherit"><button class="btn primary">Ask</button></form>
+  <div id="answer" style="white-space:pre-wrap;margin-top:8px"></div></section>
+</div>
+{{ chart|json_script:"chart" }}
+{% csrf_token %}
+<style>
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:10px}
+.days div{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;font-size:12px;color:var(--ink-2)}
+.days b{display:block;font-size:18px;color:var(--ink);margin:2px 0}
+.days .hot{border-color:var(--critical);background:color-mix(in srgb, var(--critical) 8%, transparent)}.days .hot b{color:var(--critical)}.days .warm{border-color:var(--warning)}
+.gstats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}
+.gstats div{border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.gstats span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--axis)}
+.gstats b{display:block;font-size:14px}.gstats small{display:block;font-size:11px;color:var(--axis)}
+.pnote{font-size:12px;color:var(--muted);margin:8px 0 0}
+@media(max-width:1000px){.days{grid-template-columns:repeat(2,1fr)}}
+</style>
+{% endblock %}
+{% block scripts %}<script>
+const D = UH.data('chart'), util = '{{ a.utility }}', aid = '{{ a.asset_id }}';
+loadBrief(document.getElementById('brief'), util, aid);
+const line = (label, data, color, extra) => Object.assign({label, data, borderColor:color, backgroundColor:color, pointRadius:0, borderWidth:2, tension:.2, spanGaps:util === 'energy'}, extra||{});
+if (util === 'energy') {
+  UH.chart('c1', {type:'line', data:{labels:D.ts, datasets:[line('kW', D.kw, UH.energy, {fill:true, backgroundColor:c => UH.fill(c, UH.energy)})]}});
+  const band = v => D.ts.map(() => v);
+  UH.chart('c2', {type:'line', data:{labels:D.ts, datasets:[line('R–N', D.vr, UH.energy), line('Y–N', D.vy, UH.meters), line('B–N', D.vb, UH.water),
+    line('−6 % limit', band(D.v_lo), cssv('--axis'), {borderDash:[5,4], borderWidth:1}), line('+6 % limit', band(D.v_hi), cssv('--axis'), {borderDash:[5,4], borderWidth:1})]}});
+  UH.chart('c3', {type:'line', data:{labels:D.ts, datasets:[line('I R', D.ir, UH.energy), line('I Y', D.iy, UH.meters), line('I B', D.ib, UH.water), line('I N', D.in, cssv('--ink'), {borderWidth:2}),
+    line('Rated current', D.ts.map(() => D.rated_a), cssv('--axis'), {borderDash:[5,4], borderWidth:1})]}});
+  UH.chart('c4', {type:'bar', data:{labels:D.day.concat(D.fc_day), datasets:[{label:'kWh', data:D.kwh, backgroundColor:UH.energy},
+    {label:'Forecast', data:D.day.map(() => null).concat(D.fc_kwh), backgroundColor:UH.alpha(UH.energy, .35)}]}, options:{scales:{x:{stacked:true, ticks:{maxTicksLimit:10}}}}});
+} else {
+  const note = D.window + (D.compressed ? ' · silent periods compressed' : '');
+  const W = document.getElementById('win'); if (W) W.textContent = note;
+  document.querySelectorAll('.winx').forEach(e => e.textContent = note);
+  const few = a => a.filter(x => x !== null).length < 80;
+  const strip = (id, label, data, color, on, off) => UH.chart(id, {type:'line', data:{labels:D.ts, datasets:[line(label, data, color, {stepped:true, tension:0, fill:true, spanGaps:false, backgroundColor:UH.alpha(color, .25), pointRadius:few(data) ? 3 : 0})]},
+    options:{scales:{x:{ticks:{maxTicksLimit:8}}, y:{min:0, max:1, ticks:{stepSize:1, callback:v => v ? on : off}, grid:{display:false}}}}});
+  if (D.sig.pump) strip('c1p', 'Pump on', D.pump, UH.water, 'ON', 'OFF');
+  if (D.sig.tank) UH.chart('c1', {type:'line', data:{labels:D.ts, datasets:[line('Tank level %', D.tank, UH.water, {fill:true, stepped:true, tension:0, spanGaps:true, backgroundColor:c => UH.fill(c, UH.water), pointRadius:few(D.tank) ? 3 : 0})]},
+    options:{scales:{x:{display:!D.sig.pump || true, ticks:{maxTicksLimit:8}}, y:{min:0, max:105, ticks:{callback:v => v + ' %'}}}}});
+  if (D.sig.pump) UH.chart('c4', {type:'bar', data:{labels:D.run_day, datasets:[{label:'Pump hours', data:D.run_h, backgroundColor:UH.water}]}});
+  if (D.sig.dry) strip('c5', 'Dry (no water)', D.dry, UH.critical, 'DRY', 'WATER');
+  if (D.sig.volts) UH.chart('c2', {type:'line', data:{labels:D.ts, datasets:[line('Ph 1', D.v1, UH.energy, {pointRadius:few(D.v1) ? 3 : 0}), line('Ph 2', D.v2, UH.meters, {pointRadius:few(D.v2) ? 3 : 0}), line('Ph 3', D.v3, UH.water, {pointRadius:few(D.v3) ? 3 : 0})]}});
+  if (D.sig.ph_any) UH.chart('c3', {type:'line', data:{labels:D.ts, datasets:[line('pH', D.ph, UH.water, {pointRadius:D.ph.filter(x => x !== null).length < 80 ? 3 : 0}),
+    line('6.5 limit', D.ts.map(() => 6.5), cssv('--axis'), {borderDash:[5,4], borderWidth:1}), line('8.5 limit', D.ts.map(() => 8.5), cssv('--axis'), {borderDash:[5,4], borderWidth:1})]},
+    options:{scales:{y:{suggestedMin:5, suggestedMax:11}}}});
+  if (D.sig.float) strip('c6', 'Float full', D.float, UH.water, 'FULL', 'EMPTY');
+}
+if (D.outlook) for (const [k, g] of Object.entries(D.outlook)) {
+  const L = g.day.concat(g.proj_day), pad = (x, b, a2) => Array(b).fill(null).concat(x, Array(a2).fill(null));
+  const ref = (label, v, color) => ({label, data:L.map(() => v), borderColor:color, borderDash:[4,4], borderWidth:1, pointRadius:0, _ref:true});
+  UH.chart('po-' + k, {type:'line', data:{labels:L.map(x => x.slice(5, 10)), datasets:[
+    {label:'Measured', data:pad(g.actual, 0, g.proj_day.length), borderColor:k === 'load' ? UH.energy : k === 'oti' ? UH.warning : UH.critical, borderWidth:1.5},
+    {label:'Projection', data:pad(g.proj, g.day.length, 0), borderColor:UH.meters, borderDash:[6,4], spanGaps:true},
+    ref('Alarm', g.warn, UH.warning), ref(g.crit_label, g.crit, UH.critical)]},
+    options:{scales:{x:{ticks:{maxTicksLimit:6}}, y:{ticks:{callback:v => v + (k === 'load' ? ' %' : ' °C')}}}}});
+}
+if (D.pred) UH.chart('c-pred', {type:'bar', data:{labels:D.pred.day, datasets:[{label:'Pump hours', data:D.pred.h, backgroundColor:UH.water},
+  {label:'Projected', data:D.pred.fc, backgroundColor:UH.alpha(UH.water, .35)}]}, options:{scales:{x:{stacked:true}}}});
+document.getElementById('ask').addEventListener('submit', e => {
+  e.preventDefault(); const q = e.target.q.value, out = document.getElementById('answer');
+  out.innerHTML = '<span class="spinner"></span>';
+  fetch('/ai/ask.json', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
+    body:JSON.stringify({question:q, scope:util, asset:aid})}).then(r => r.json()).then(d => out.textContent = d.answer);
+});
+</script>{% endblock %}

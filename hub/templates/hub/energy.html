@@ -1,0 +1,70 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Energy · transformer intelligence{% endblock %}
+{% block content %}
+<h1><span class="ico" style="--tint:var(--energy-tint);--uink:var(--energy-ink)"><svg><use href="#i-zap"/></svg></span>Energy · transformer intelligence</h1>
+<p class="lead">{{ k.n }} monitored distribution transformers (STMU: 15-minute V, I, kW, PF, THD, neutral current), worst health first. Pick a transformer for its readings, load forecast, capacity plan and five-month outlook — data to {{ as_of|date:"d M Y H:i" }}{% if clock %}; measured to {{ clock.energy_measured|date:"d M Y H:i" }}, then each unit carried forward on its own weekday × 15-minute profile{% endif %}.</p>
+<div class="kpis">
+  <div class="kpi"><span>Monitored</span><strong>{{ k.n }}</strong><small>{{ k.online }} reporting</small></div>
+  <div class="kpi"><span>Energy · 30 days</span><strong>{{ k.mwh_30d|num:0 }}<small> MWh</small></strong></div>
+  <div class="kpi"><span>Critical / warning</span><strong class="h-bad">{{ k.critical }}</strong><small>{{ k.warning }} with warnings</small></div>
+  <div class="kpi"><span>Predicted issue</span><strong{% if k.predicted %} class="h-warn"{% endif %}>{{ k.predicted }}</strong><small>overload, nameplate or hot-spot ahead</small></div>
+  <div class="kpi"><span>Overload risk · 7 days</span><strong{% if k.risk7 %} class="h-bad"{% endif %}>{{ k.risk7 }}</strong><small>P(overload) ≥ 30 %</small></div>
+  <div class="kpi"><span>Load imbalance</span><strong{% if k.imb %} class="h-warn"{% endif %}>{{ k.imb }}</strong><small>one or two phases carry the load</small></div>
+</div>
+
+<div class="qf" style="--qf-on:var(--energy)">
+  <button class="btn chip on" data-f="all">All</button>
+  <button class="btn chip" data-f="critical">Critical</button>
+  <button class="btn chip" data-f="predicted">Predicted issue · 5 months</button>
+  <button class="btn chip" data-f="risk7">Overload risk · 7 days</button>
+  <button class="btn chip" data-f="over5">Pass nameplate · 5 months</button>
+  <button class="btn chip" data-f="hot5">Hot-spot alarm · 5 months</button>
+  <button class="btn chip" data-f="overload high_loading">Overloaded / near rating</button>
+  <button class="btn chip" data-f="imbalance unbalance">Load imbalance</button>
+  <button class="btn chip" data-f="neutral">Neutral current</button>
+  <button class="btn chip" data-f="low_voltage high_voltage">Voltage out of limits</button>
+  <button class="btn chip" data-f="low_pf">Low power factor</button>
+  <button class="btn chip" data-f="offline">Not reporting</button>
+</div>
+
+<div class="md" style="--accent:var(--energy)">
+  <div class="md-left">
+    <input class="md-search" placeholder="Search DT-xx or issue…">
+    <span class="md-count"><b>{{ rows|length }}</b> transformers · worst first</span>
+    <div class="md-list">{% for r in rows %}
+      <button class="md-item {% if r.a.health < 50 %}critical{% elif r.a.health < 80 %}warning{% else %}good{% endif %}" data-id="{{ r.a.asset_id }}" data-src="/transformer/{{ r.a.asset_id }}/" data-tags="{{ r.tags }}">
+        <div class="r1"><b>{{ r.a.asset_id }}</b>{% if not r.a.online %}<span class="sev critical">offline</span>{% endif %}<span class="health {{ r.a.health|health_class }}">{{ r.a.health }}</span></div>
+        <div class="sub">{{ r.a.rating_kva }} kVA · peak {{ r.a.load_pk|pct }} · PF {{ r.a.pf|num:2 }}{% if r.d.forecast %} · P(overload) {{ r.d.forecast.max_p_overload }} %{% endif %}{% if r.d.first_over_month %} · passes {{ r.d.first_over_month.month|date:"M Y" }}{% endif %}</div>
+        {% with p=r.d.phase %}{% if p %}<div class="pb-bar" style="margin-top:6px;{% if not p.flagged %}opacity:.45{% endif %}">{% for x in p.shares %}<i class="pb-{{ forloop.counter }}" style="width:{{ x }}%"></i>{% endfor %}</div>
+        <div class="sub" style="font-size:11.5px">{{ p.shares_text }} · {{ p.text }}{% if p.heavy_peak_pct >= 100 %} · <b style="color:var(--critical)">{{ p.heavy }} peak {{ p.heavy_peak_pct }} %</b>{% endif %}</div>{% endif %}{% endwith %}
+        <div class="chipline">{% for f in r.a.findings|slice:":2" %}<span class="sev {{ f.severity }}">{{ f.title }}</span>{% endfor %}</div>
+      </button>{% endfor %}</div>
+  </div>
+  <div class="md-right"><iframe title="Transformer insights"></iframe></div>
+</div>
+
+<h2 style="margin:22px 0 8px">Fleet view</h2>
+<section class="card"><h2>Peak load vs nameplate · every transformer <span class="sub">· solid = highest peak in the last 30 days, light = projected peak in the next 5 months, red line = 100 % of rating</span></h2>
+  <div class="chart" style="height:320px"><canvas id="c-peak"></canvas></div></section>
+<div class="grid g2" style="margin-top:14px">
+  <section class="card"><h2>Energy delivered per day, all transformers (MWh)</h2><div class="chart"><canvas id="c-daily"></canvas></div></section>
+  <section class="card"><h2>Average load by hour, last 30 days (MW)</h2><div class="chart"><canvas id="c-profile"></canvas></div></section>
+</div>
+<section class="ai-card" style="margin-top:14px"><h2>AI suggestions · energy</h2><div id="brief"><span class="spinner"></span> Reading the transformer findings…</div></section>
+<p class="muted" style="font-size:12px">Health index: 100 minus each finding's weight. Forecast: weekday × 15-minute profile of the last 4 weeks; P(overload) from the 8-week back-test spread. Five-month outlook: each transformer's own peak on the same dates last year × its year-on-year growth. Ratings are inferred from each unit's heaviest-phase current where the nameplate is not in the data.</p>
+{{ charts|json_script:"charts" }}
+{% endblock %}
+{% block scripts %}<script>
+const C = UH.data('charts');
+UH.master();
+loadBrief(document.getElementById('brief'), 'energy');
+const P = C.peak, col = v => v >= 120 ? UH.critical : v >= 100 ? UH.warning : UH.energy;
+UH.chart('c-peak', {type:'bar', data:{labels:P.id, datasets:[
+  {label:'Peak, last 30 days (%)', data:P.now, backgroundColor:P.now.map(col)},
+  {label:'Projected peak, next 5 months (%)', data:P.proj, backgroundColor:P.proj.map(v => UH.alpha(v >= 100 ? UH.critical : UH.energy, .3)), borderColor:P.proj.map(v => v >= 100 ? UH.critical : UH.energy), borderWidth:1},
+  {type:'line', label:'Nameplate', data:P.id.map(() => 100), borderColor:UH.critical, borderDash:[5,4], borderWidth:1.5, pointRadius:0, _ref:true}]},
+  options:{scales:{x:{ticks:{autoSkip:false, maxRotation:60, font:{size:10}}}, y:{beginAtZero:true, ticks:{callback:v => v + ' %'}}},
+           onClick:(e, els) => { if (els.length) { const id = P.id[els[0].index], el = document.querySelector(`.md-item[data-id="${id}"]`); if (el) { el.click(); document.querySelector('.md').scrollIntoView({behavior:'smooth'}); } } }}});
+UH.chart('c-daily', {type:'line', data:{labels:C.energy_daily.day, datasets:[{label:'MWh / day', data:C.energy_daily.mwh, borderColor:UH.energy, backgroundColor:c => UH.fill(c, UH.energy), fill:true}]}});
+UH.chart('c-profile', {type:'bar', data:{labels:C.profile.h.map(h => h + ':00'), datasets:[{label:'Average MW', data:C.profile.mw, backgroundColor:UH.energy}]}});
+</script>{% endblock %}

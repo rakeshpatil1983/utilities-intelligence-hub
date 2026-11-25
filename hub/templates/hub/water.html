@@ -1,0 +1,80 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Water{% endblock %}
+{% block content %}
+<h1><span class="ico" style="--tint:var(--water-tint);--uink:var(--water-ink)"><svg><use href="#i-drop"/></svg></span>Water · pump houses, overhead tanks, quality</h1>
+<p class="lead">Pump controllers report pump state, tank level, sump / well and flow (dry-run) status and the supply phase voltages;
+quality monitors report pH. Live controllers are analysed over their last 30 days, history-only controllers over their whole record.</p>
+{% if not configured %}
+<div class="notice"><b>Live sync from the water platform ({{ api_base }}) is not switched on.</b>
+Add an account for that platform as <span class="mono">WATER_API_USERNAME</span> / <span class="mono">WATER_API_PASSWORD</span> in <span class="mono">.env</span>
+and restart, or run <span class="mono">manage.py sync_water</span>. Until then the page shows the platform's recorded history{% if clock.water %} ({{ clock.water.0|date:'M Y' }} – {{ clock.water.1|date:'M Y' }}), replayed so its latest reading is today{% endif %}.</div>
+{% elif w.sync_error %}<div class="notice">Last live sync problem: {{ w.sync_error }}</div>
+{% elif w.synced %}<p class="muted">Live sync from {{ api_base }} · last {{ w.synced }}</p>{% endif %}
+<div class="kpis">
+  <div class="kpi"><span>Controllers</span><strong>{{ k.n }}</strong><small>{{ k.readings|num:0 }} readings</small></div>
+  <div class="kpi"><span>Pump run-time</span><strong>{{ k.runtime|num:0 }}<small> h</small></strong><small>analysis windows</small></div>
+  <div class="kpi"><span>Dry runs</span><strong class="h-bad">{{ k.dry }}</strong><small>pump on without water</small></div>
+  <div class="kpi"><span>Overflows</span><strong>{{ k.over }}</strong><small>pump on, tank full</small></div>
+  <div class="kpi"><span>Pump energy (est.)</span><strong>{{ k.kwh|num:0 }}<small> kWh</small></strong><small>{{ pump_kw }} kW pumps</small></div>
+  <div class="kpi"><span>Critical issues</span><strong class="h-bad">{{ k.critical }}</strong><small>{{ w.findings|length }} findings in all</small></div>
+</div>
+
+<div class="qf" style="--qf-on:var(--water)">
+  <button class="btn chip on" data-f="all">All</button>
+  <button class="btn chip" data-f="critical">Critical</button>
+  <button class="btn chip" data-f="predicted">Predicted faults · 30 days</button>
+  <button class="btn chip" data-f="dry_run">Dry running</button>
+  <button class="btn chip" data-f="overflow">Tank overflow</button>
+  <button class="btn chip" data-f="single_phasing">Missing phase</button>
+  <button class="btn chip" data-f="pump_cycling">Short-cycling</button>
+  <button class="btn chip" data-f="ph ph_sensor">Water quality (pH)</button>
+  <button class="btn chip" data-f="sensor ph_sensor">Sensor faults</button>
+  <button class="btn chip" data-f="offline">Not reporting</button>
+</div>
+<div class="md" style="--accent:var(--water)">
+  <div class="md-left">
+    <input class="md-search" placeholder="Search controller or issue…">
+    <span class="md-count"><b>{{ assets|length }}</b> controllers · worst first</span>
+    <div class="md-list">{% for a in assets %}
+      <button class="md-item {% if a.health < 50 %}critical{% elif a.health < 80 %}warning{% else %}good{% endif %}" data-id="{{ a.asset_id }}" data-src="/asset/{{ a.asset_id }}/" data-tags="{% for f in a.findings %}{{ f.code|lower }} {% if f.severity == 'critical' %}critical {% endif %}{% endfor %}{% if not a.online %}offline{% endif %} {{ ptags|get:a.asset_id }}">
+        <div class="r1"><b>{{ a.asset_id }}</b><span class="muted" style="font-size:12px">{{ a.kind }}</span><span class="health {{ a.health|health_class }}">{{ a.health }}</span></div>
+        <div class="sub">Pump {% if a.pump_now == 1 %}<b style="color:var(--good)">ON</b>{% elif a.pump_now == 0 %}OFF{% else %}—{% endif %}{% if a.tank_now is not None %} · tank {{ a.tank_now|num:0 }} %{% endif %}{% if a.ph_now %} · pH {{ a.ph_now|num:1 }}{% endif %}</div>
+        <div class="sub">{{ a.dry_runs }} dry runs · {{ a.overflows }} overflows · {{ a.pump_kwh|num:0 }} kWh pump energy</div>
+        <div class="chipline">{% for f in a.findings|slice:":2" %}<span class="sev {{ f.severity }}">{{ f.title }}</span>{% endfor %}</div>
+      </button>{% empty %}<p class="muted">No water readings yet.</p>{% endfor %}</div>
+  </div>
+  <div class="md-right"><iframe title="Water controller insights"></iframe></div>
+</div>
+<h2 style="margin:22px 0 8px">Fleet view</h2>
+<div class="grid g2">
+  <section class="card"><h2>Pump run-time per day <span class="sub">· hours, all controllers</span></h2><div class="chart"><canvas id="c-run"></canvas></div></section>
+  <section class="card"><h2>Controller health <span class="sub">· 0–100, worst first</span></h2><div class="chart"><canvas id="c-health"></canvas></div></section>
+  <section class="card"><h2>Water issues by type</h2><div class="chart"><canvas id="c-issues"></canvas></div></section>
+  <section class="card"><h2>Tank level readings <span class="sub">· how often tanks are empty or full</span></h2><div class="chart"><canvas id="c-tank"></canvas></div></section>
+</div>
+<section class="card" style="margin-top:16px"><h2>Readings received per month <span class="sub">· data coverage — empty months mean the controllers were silent</span></h2><div class="chart" style="height:200px"><canvas id="c-month"></canvas></div></section>
+
+<section class="ai-card" style="margin-top:16px"><h2>AI suggestions · water</h2><div id="brief"><span class="spinner"></span> Reading the pump-house findings…</div></section>
+<p class="muted" style="font-size:12px">Pump energy = run-time × {{ pump_kw }} kW rated pump power (PUMP_KW in .env).</p>
+{% endblock %}
+{% block scripts %}{{ charts|json_script:"charts" }}<script>
+const C = UH.data('charts');
+UH.master();
+loadBrief(document.getElementById('brief'), 'water');
+const hbar = {indexAxis:'y', scales:{x:{grid:{color:cssv('--grid')}, ticks:{color:cssv('--axis')}}, y:{grid:{display:false}, ticks:{color:cssv('--ink-2'), font:{size:11.5}}}}};
+const right = {topRight:4, bottomRight:4, topLeft:0, bottomLeft:0};
+UH.chart('c-run', {type:'bar', data:{labels:C.runtime.day, datasets:[{label:'Pump hours', data:C.runtime.h, backgroundColor:UH.water}]}});
+const stat = v => v >= 80 ? UH.good : v >= 50 ? UH.warning : UH.critical;
+UH.chart('c-health', {type:'bar', data:{labels:C.health.label, datasets:[{label:'Health', data:C.health.v, backgroundColor:C.health.v.map(stat), borderRadius:right}]},
+  options:Object.assign({}, hbar, {scales:{x:{min:0, max:100, grid:{color:cssv('--grid')}, ticks:{color:cssv('--axis')}}, y:hbar.scales.y}})});
+UH.chart('c-issues', {type:'bar', data:{labels:C.issues.label, datasets:[{label:'Controllers affected', data:C.issues.n, backgroundColor:UH.water, borderRadius:right}]},
+  options:Object.assign({}, hbar, {scales:{x:{grid:{color:cssv('--grid')}, ticks:{color:cssv('--axis'), precision:0}}, y:hbar.scales.y}})});
+UH.chart('c-tank', {type:'bar', data:{labels:C.tank.label, datasets:[{label:'Readings', data:C.tank.n, backgroundColor:UH.water}]}});
+UH.chart('c-month', {type:'bar', data:{labels:C.monthly.m, datasets:[{label:'Readings', data:C.monthly.n, backgroundColor:UH.alpha(UH.water, .85)}]}});
+document.querySelectorAll('canvas.spark').forEach(el => {
+  const d = C.spark[el.dataset.id] || []; if (!d.length) return;
+  new Chart(el, {type:'bar', data:{labels:d.map((_, i) => i), datasets:[{data:d, backgroundColor:UH.water, borderRadius:1, barPercentage:1, categoryPercentage:.9}]},
+    options:{responsive:true, maintainAspectRatio:false, animation:false, plugins:{legend:{display:false}, tooltip:{enabled:false}},
+             scales:{x:{display:false}, y:{display:false, beginAtZero:true}}}});
+});
+</script>{% endblock %}

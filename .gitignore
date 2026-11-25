@@ -1,0 +1,11 @@
+.venv/
+.env
+data/
+__pycache__/
+*.pyc
+
+# presentation media: too large for the teknovate git server
+presentation/*.mp4
+presentation/*.mp3
+presentation/
+*.bundle

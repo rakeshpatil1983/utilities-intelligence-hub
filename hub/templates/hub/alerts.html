@@ -1,0 +1,16 @@
+{% extends "hub/base.html" %}
+{% block crumb %}Alerts{% endblock %}
+{% block content %}
+<h1><span class="ico"><svg><use href="#i-bell"/></svg></span>Alerts · energy, meters, solar and water</h1>
+<p class="lead">Every finding from energy, smart meters and water, most severe first. Open Evidence to see the readings behind it.</p>
+<div class="filters">
+  <a href="?" class="{% if not q.utility and not q.severity and not q.code %}on{% endif %}">All</a>
+  <a href="?utility=energy" class="{% if q.utility == 'energy' %}on{% endif %}">Energy</a>
+  <a href="?utility=meters" class="{% if q.utility == 'meters' %}on{% endif %}">Smart meters</a>
+  <a href="?utility=solar" class="{% if q.utility == 'solar' %}on{% endif %}">Solar</a>
+  <a href="?utility=water" class="{% if q.utility == 'water' %}on{% endif %}">Water</a>
+  <a href="?severity=critical" class="{% if q.severity == 'critical' %}on{% endif %}">Critical</a>
+  {% for c in codes %}<a href="?code={{ c.code }}" class="{% if q.code == c.code %}on{% endif %}">{{ c.title }} ({{ c.n }})</a>{% endfor %}
+</div>
+{% include "hub/partials/findings.html" %}
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "hub/base.html" %}
+{% block crumb %}Open API{% endblock %}
+{% block content %}
+<h1><span class="ico"><svg><use href="#i-code"/></svg></span>Open API for hackathon teams</h1>
+<p class="lead">The same analytics as the dashboard, as JSON. No login, no key — build your own app, model or chatbot on top.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Endpoint</th><th>Returns</th><th>Try</th></tr></thead>
+<tbody>
+<tr><td class="mono">GET /api/v1/summary</td><td>Energy + water KPIs, water–energy link, issue counts by type</td><td><a href="/api/v1/summary">open</a></td></tr>
+<tr><td class="mono">GET /api/v1/assets?utility=energy|water</td><td>Every asset with its metrics and health score</td><td><a href="/api/v1/assets">open</a></td></tr>
+<tr><td class="mono">GET /api/v1/findings?utility=&amp;severity=&amp;code=</td><td>All findings with severity, measured value, why, field action and evidence window</td><td><a href="/api/v1/findings?severity=critical">open</a></td></tr>
+<tr><td class="mono">GET /api/v1/meters?band=&amp;cat=&amp;feeder=&amp;dt=&amp;q=&amp;limit=&amp;offset=</td><td>Consumer smart meters: health index, band, predicted failure window, diagnosis, fault type, field action</td><td><a href="/api/v1/meters?band=Critical&limit=20">critical</a></td></tr>
+<tr><td class="mono">GET /api/v1/meters/&lt;meter&gt;</td><td>One meter with its interval readings (V, I, PF, kWh, kW)</td><td></td></tr>
+<tr><td class="mono">GET /api/v1/solar</td><td>Solar plants, inverter blocks, performance ratio, issues and trip episodes</td><td><a href="/api/v1/solar">open</a></td></tr>
+<tr><td class="mono">GET /api/v1/transformers</td><td>Transformer intelligence: health, phase balance, 7-day load forecast, 12-month capacity plan, five-month outlook (load, estimated oil and hot-spot temperature)</td><td><a href="/api/v1/transformers">open</a></td></tr>
+<tr><td class="mono">GET /api/v1/assets/&lt;id&gt;/series?days=7</td><td>Raw readings: 15-min electrical values (DT-xx) or pump / tank / pH readings (Wxxx)</td><td><a href="/api/v1/assets/DT-01/series?days=1">DT-01</a> · <a href="/api/v1/assets/W4/series?days=7">W4</a></td></tr>
+</tbody></table></div>
+<section class="card" style="margin-top:14px"><h2>Ideas</h2><ul>
+<li>Predict tomorrow's transformer peak and schedule pumping away from it (load shifting).</li>
+<li>Detect dry-run risk before it happens from sump level and pump current.</li>
+<li>Rank field visits across both utilities by risk × consumers affected.</li>
+<li>A WhatsApp / voice bot for linemen and pump operators on top of <span class="mono">/api/v1/findings</span>.</li>
+</ul></section>
+{% endblock %}

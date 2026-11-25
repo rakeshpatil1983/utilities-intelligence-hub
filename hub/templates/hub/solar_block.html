@@ -1,0 +1,59 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block kind %}solar{% endblock %}
+{% block crumb %}Solar · {{ b.inv_id }}{% endblock %}
+{% block content %}
+<p class="muted back-link" style="margin:0"><a href="/solar/">← Solar</a></p>
+<h1><span class="ico" style="--tint:var(--solar-tint);--uink:var(--solar-ink)"><svg><use href="#i-sun"/></svg></span>{{ b.inv_id }} · {{ b.consumer }}</h1>
+<p class="lead">{{ b.make }} {{ b.model }} · {{ b.kw_ac|num:0 }} kW AC / {{ b.kwp|num:0 }} kWp · plant {{ b.plant }}{% if b.feeder %} · {{ b.feeder }}{% endif %} · last reading {{ b.last_seen|date:"d M Y H:i" }}</p>
+<div class="kpis">
+  <div class="kpi"><span>Health</span><strong class="h-{{ health|health_class }}">{{ health }} <small>/ 100</small></strong><small>{{ b.issues|length }} issue{{ b.issues|length|pluralize }}</small></div>
+  <div class="kpi"><span>Status</span><strong>{% if b.status == 'running' %}<span style="color:var(--good)">running</span>{% else %}<span style="color:var(--critical)">{{ b.status }}</span>{% endif %}</strong></div>
+  <div class="kpi"><span>Output now</span><strong>{{ b.kw_now|num:0 }}<small> kW</small></strong><small>{{ b.today_kwh|num:0 }} kWh today</small></div>
+  <div class="kpi"><span>Performance ratio</span><strong>{{ b.pr30|num:1 }}<small> %</small></strong><small>7 days {{ b.pr7|num:1 }} %</small></div>
+  <div class="kpi"><span>Availability</span><strong>{{ b.availability }}<small> %</small></strong></div>
+  <div class="kpi"><span>Energy 30 d</span><strong>{{ b.e30_kwh|num:0 }}<small> kWh</small></strong></div>
+</div>
+<div class="dtabs" style="--accent:var(--solar)">
+  <button data-tab="summary">Summary</button><button data-tab="predictive">Predictive</button><button data-tab="actions">Field actions</button><button data-tab="trips">Trips &amp; events ({{ b.episodes|length }})</button>
+</div>
+<div class="dpane" data-pane="summary">
+  <section class="card"><h2>Issues on this block</h2>
+  {% for i in b.issues %}<p style="margin:8px 0"><span class="sev {% if i.severity == 'critical' or i.severity == 'warning' %}{{ i.severity }}{% else %}info{% endif %}">{{ i.severity }}</span> <b>{{ i.label }}</b> <span class="muted">· {{ i.value }}</span>{% if i.corrective %}<br><span style="font-size:13px">{{ i.corrective|first }}</span>{% endif %}</p>
+  {% empty %}<p class="muted">No issues on this block — running normally.</p>{% endfor %}</section>
+  <section class="card" style="margin-top:14px"><h2>Plant {{ plant.plant }}</h2>
+    <p style="margin:0">{% if plant.tx %}DT-level plant · connected through its own {{ plant.tx.mva }} MVA {{ plant.tx.ratio }} step-up transformer.{% else %}Feeder-level plant · block transformers straight onto the 11 kV feeder — anti-islanding matters for lineman safety.{% endif %}
+    {{ plant.n }} monitored block{{ plant.n|pluralize }}, {{ plant.kw_now|num:0 }} kW now, {{ plant.today_kwh|num:0 }} kWh today.</p>
+    {% if plant.tx.latest %}<p class="legend-note">Plant transformer: {{ plant.tx.latest.load_pct|num:0 }} % load · top oil {{ plant.tx.latest.oti|num:0 }} °C (expected {{ plant.tx.latest.oti_exp|num:0 }}) · oil {{ plant.tx.latest.oil_level|num:0 }} %</p>{% endif %}
+  </section>
+</div>
+<div class="dpane" data-pane="predictive">
+<div class="kpis">
+  <div class="kpi"><span>PR trend</span><strong class="{% if pred.slope_month < 0 %}h-warn{% endif %}">{% if pred.slope_month >= 0 %}+{% endif %}{{ pred.slope_month|num:1 }}<small> pts/month</small></strong><small>7-day vs 30-day average</small></div>
+  <div class="kpi"><span>PR in 30 days</span><strong>{{ pred.proj|num:1 }}<small> %</small></strong><small>if the trend holds</small></div>
+  <div class="kpi"><span>Below 70 % PR</span><strong class="{% if pred.days70 or b.pr7 < 70 %}h-bad{% endif %}">{% if b.pr7 and b.pr7 < 70 %}already below{% elif pred.days70 %}in {{ pred.days70 }} d{% else %}not on this trend{% endif %}</strong></div>
+  <div class="kpi"><span>Trips · next 30 days</span><strong class="{% if pred.trips30 %}h-bad{% endif %}">{{ pred.trips30 }}</strong><small>at the last 30 days' rate</small></div>
+  <div class="kpi"><span>Energy at risk · 30 days</span><strong>{{ pred.lost30|num:0 }}<small> kWh</small></strong><small>vs {{ pred.bench|num:0 }} % PR benchmark</small></div>
+</div>
+<section class="card" style="margin-top:14px"><h2>Performance ratio · trend</h2><div class="chart"><canvas id="c-pred"></canvas></div>
+  <p style="font-size:12px;color:var(--muted);margin:8px 0 0">Straight-line projection of the 30-day and 7-day averages; soiling and string faults show as a falling ratio before any alarm.</p></section>
+</div>
+<div class="dpane" data-pane="actions">
+{% for i in b.issues %}<section class="card" style="margin-bottom:12px;border-left:4px solid var(--{% if i.severity == 'critical' %}critical{% else %}warning{% endif %})">
+  <h2><span class="sev {% if i.severity == 'critical' or i.severity == 'warning' %}{{ i.severity }}{% else %}info{% endif %}">{{ i.severity }}</span> {{ i.label }} <span class="sub">· {{ i.value }}</span></h2>
+  <div class="grid g2"><div><p class="muted" style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Field action</p><ol>{% for x in i.corrective %}<li>{{ x }}</li>{% endfor %}</ol></div>
+  <div><p class="muted" style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Prevent</p><ul>{% for x in i.preventive %}<li>{{ x }}</li>{% endfor %}</ul></div></div>
+</section>{% empty %}<p class="muted">No issues on this block — no field action needed.</p>{% endfor %}
+</div>
+<div class="dpane" data-pane="trips">
+{% if b.episodes %}<div class="table-wrap"><table><thead><tr><th>Start</th><th class="num">Duration</th><th>State</th><th>Alarm</th><th class="num">Peak V</th><th class="num">Riso MΩ</th><th class="num">Temp °C</th></tr></thead>
+<tbody>{% for e in b.episodes %}<tr><td>{{ e.start|date:"d M H:i" }}</td><td class="num">{{ e.dur_min }} min</td><td>{{ e.status }}</td><td>{{ e.alarm }}</td><td class="num">{{ e.peak_v|num:0 }}</td><td class="num">{{ e.riso|num:2 }}</td><td class="num">{{ e.temp|num:0 }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="muted">No trips or fault episodes recorded for this block.</p>{% endif %}
+</div>
+{{ pred_json|json_script:"pred" }}
+{% endblock %}
+{% block scripts %}<script>
+const P = UH.data('pred');
+UH.chart('c-pred', {type:'line', data:{labels:P.x, datasets:[{label:'Performance ratio %', data:P.pr, borderColor:UH.solar, pointRadius:5, borderDash:[0], segment:{borderDash:c => c.p0DataIndex === 1 ? [6,4] : undefined}},
+  {label:'70 % alarm', data:P.x.map(() => 70), borderColor:UH.critical, borderDash:[4,4], borderWidth:1, pointRadius:0, _ref:true}]},
+  options:{scales:{y:{suggestedMin:50, suggestedMax:90, ticks:{callback:v => v + ' %'}}}}});
+</script>{% endblock %}

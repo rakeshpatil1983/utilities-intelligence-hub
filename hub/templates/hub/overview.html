@@ -1,0 +1,128 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Overview{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-grid">
+    <div>
+      <h1>Good {% now "A" as ampm %}{% if ampm == "AM" %}morning{% else %}afternoon{% endif %} — here is the utility today</h1>
+      <p>Electricity distribution transformers, consumer smart meters, solar plants and drinking-water supply, scored from their own readings.
+      <b style="color:#fff">{{ ov.energy.critical|add:ov.water.critical|add:ov.meters.critical|add:ov.solar.critical }} critical issues</b> need the field team.</p>
+    </div>
+    {% for r in rings %}
+    <a class="ring" href="{{ r.url }}" style="text-decoration:none;color:#fff">
+      <svg viewBox="0 0 74 74"><circle cx="37" cy="37" r="30" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="8"/>
+        <circle cx="37" cy="37" r="30" fill="none" stroke="var(--{{ r.color }})" stroke-width="8" stroke-linecap="round" stroke-dasharray="{{ r.value|ring }}"/></svg>
+      <div><div class="l">{{ r.label }}</div><div class="v">{{ r.value|num:0 }}<span style="font-size:13px;color:#c7d6e8"> / 100</span></div>
+        <div class="s"><i style="background:var(--{{ r.value|status_of }})"></i>{{ r.value|status_label }}</div></div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="grid g2">
+  <section class="band energy">
+    <h2><span class="ico"><svg><use href="#i-zap"/></svg></span>Energy <span class="muted" style="font-weight:400">· distribution transformers</span></h2>
+    <div class="chart sm"><canvas id="sp-energy" aria-label="Energy per day, last 60 days"></canvas></div>
+    <p class="legend-note" style="margin:2px 0 12px">MWh delivered per day · last 60 days to {{ ov.energy.as_of|date:"d M" }}</p>
+    <div class="kpis">
+      <div class="kpi"><span>Online</span><strong>{{ ov.energy.online }}<small> / {{ ov.energy.n }}</small></strong></div>
+      <div class="kpi"><span>Energy, 30 d</span><strong>{{ ov.energy.mwh_30d|num:0 }}<small> MWh</small></strong></div>
+      <div class="kpi"><span>Critical</span><strong class="h-bad">{{ ov.energy.critical }}</strong><small>{{ ov.energy.warning }} warnings</small></div>
+      <div class="kpi"><span>Loss-related</span><strong>{{ ov.energy.loss_hint }}</strong><small>PF · unbalance · neutral</small></div>
+    </div>
+  </section>
+  <section class="band meters">
+    <h2><span class="ico"><svg><use href="#i-gauge"/></svg></span>Smart meters <span class="muted" style="font-weight:400">· consumers</span></h2>
+    {% if ov.meters %}
+    <div style="height:150px;display:flex;flex-direction:column;justify-content:center;gap:10px">
+      <div style="display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden" role="img" aria-label="Meters by health band">
+        {% for b in ov.meters.bands %}<div title="{{ b.band }}: {{ b.n }}" style="flex:{{ b.n|share:ov.meters.total }};background:var(--{% if b.band == 'Critical' %}critical{% elif b.band == 'Degradation' %}serious{% elif b.band == 'Watch' %}warning{% else %}good{% endif %})"></div>{% endfor %}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;font-size:12.5px">
+        {% for b in ov.meters.bands %}<span style="display:flex;align-items:center;gap:6px"><i style="width:9px;height:9px;border-radius:2px;background:var(--{% if b.band == 'Critical' %}critical{% elif b.band == 'Degradation' %}serious{% elif b.band == 'Watch' %}warning{% else %}good{% endif %})"></i>{{ b.band }} <b style="margin-left:auto" class="mono">{{ b.n|num:0 }}</b></span>{% endfor %}
+      </div>
+    </div>
+    <p class="legend-note" style="margin:2px 0 12px">{{ ov.meters.total|num:0 }} meters · {{ ov.meters.feeders }} feeders · {{ ov.meters.dts }} DTs</p>
+    <div class="kpis">
+      <div class="kpi"><span>Critical</span><strong class="h-bad">{{ ov.meters.critical|num:0 }}</strong><small>{{ ov.meters.degradation|num:0 }} degrading</small></div>
+      <div class="kpi"><span>Fail ≤ 1 month</span><strong>{{ ov.meters.fail_within_month|num:0 }}</strong><small>+{{ ov.meters.fail_if_repeated|num:0 }} if repeated</small></div>
+      <div class="kpi"><span>Avg health</span><strong>{{ ov.meters.mhi|num:1 }}</strong><small>MHI</small></div>
+      <div class="kpi"><span>DT twin alarms</span><strong>{{ ov.meters.twin.Critical|default:0 }}</strong><small>{{ ov.meters.twin.Warning|default:0 }} warnings</small></div>
+    </div>
+    {% else %}<p class="muted">Not imported yet — run <span class="mono">manage.py import_meters</span>.</p>{% endif %}
+  </section>
+  <section class="band solar">
+    <h2><span class="ico"><svg><use href="#i-sun"/></svg></span>Solar <span class="muted" style="font-weight:400">· plants &amp; inverter blocks</span></h2>
+    {% if ov.solar %}{% with sl=ov.solar %}
+    <div class="chart sm"><canvas id="sp-solar" aria-label="30-day energy by plant"></canvas></div>
+    <p class="legend-note" style="margin:2px 0 12px">MWh generated by plant, last 30 days · {{ sl.plants }} plants, {{ sl.mw_ac|num:1 }} MW AC</p>
+    <div class="kpis">
+      <div class="kpi"><span>Running</span><strong>{{ sl.running }}<small> / {{ sl.blocks }}</small></strong><small>inverter blocks</small></div>
+      <div class="kpi"><span>Output now</span><strong>{{ sl.mw_now|num:1 }}<small> MW</small></strong><small>{{ sl.mwh_today|num:1 }} MWh today</small></div>
+      <div class="kpi"><span>Performance ratio</span><strong>{{ sl.pr30|num:1 }}<small> %</small></strong><small>30-day average</small></div>
+      <div class="kpi"><span>Issues</span><strong class="h-bad">{{ sl.issues }}</strong><small>{{ sl.critical }} critical</small></div>
+    </div>{% endwith %}
+    {% else %}<p class="muted">Solar fleet not loaded.</p>{% endif %}
+  </section>
+  <section class="band water">
+    <h2><span class="ico"><svg><use href="#i-drop"/></svg></span>Water <span class="muted" style="font-weight:400">· pump houses &amp; tanks</span></h2>
+    <div class="chart sm"><canvas id="sp-water" aria-label="Pump run-time per day"></canvas></div>
+    <p class="legend-note" style="margin:2px 0 12px">Pump hours per day, all controllers · {% if ov.water.live %}live{% else %}platform history{% endif %}</p>
+    <div class="kpis">
+      <div class="kpi"><span>Controllers</span><strong>{{ ov.water.online }}<small> / {{ ov.water.n }}</small></strong></div>
+      <div class="kpi"><span>Dry runs</span><strong class="h-bad">{{ ov.water.dry_runs }}</strong><small>pump without water</small></div>
+      <div class="kpi"><span>Overflows</span><strong>{{ ov.water.overflows }}</strong><small>tank full, pump on</small></div>
+      <div class="kpi"><span>Critical</span><strong class="h-bad">{{ ov.water.critical }}</strong><small>{{ ov.water.warning }} warnings</small></div>
+    </div>
+  </section>
+</div>
+
+{% if ov.xfmr %}{% with x=ov.xfmr %}
+<a href="/energy/" class="card" style="margin-top:16px;display:block;text-decoration:none;color:inherit;border-top:4px solid var(--energy)">
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><span class="ico" style="--tint:var(--energy-tint);--uink:var(--energy-ink)"><svg><use href="#i-shield"/></svg></span>
+    <div><h2 style="margin:0">Transformer intelligence</h2><span class="muted">Health ranking, phase balance, 7-day load forecast, 12-month capacity plan and a five-month outlook for {{ x.n }} transformers.</span></div>
+    <span class="btn" style="margin-left:auto">Open →</span></div>
+  <div class="kpis">
+    <div class="kpi"><span>Overload risk · 7 days</span><strong{% if x.risk7 %} class="h-bad"{% endif %}>{{ x.risk7 }}</strong><small>P(overload) ≥ 30 %</small></div>
+    <div class="kpi"><span>Pass nameplate · 5 months</span><strong{% if x.over5 %} class="h-warn"{% endif %}>{{ x.over5 }}</strong><small>projected peak ≥ 100 %</small></div>
+    <div class="kpi"><span>Hot-spot alarm · 5 months</span><strong{% if x.hot5 %} class="h-warn"{% endif %}>{{ x.hot5 }}</strong><small>estimated ≥ 100 °C</small></div>
+    <div class="kpi"><span>Load imbalance</span><strong{% if x.imb %} class="h-warn"{% endif %}>{{ x.imb }}</strong><small>one or two phases carry the load</small></div>
+  </div>
+</a>{% endwith %}{% endif %}
+
+<section class="card" style="margin-top:16px;display:grid;grid-template-columns:minmax(0,1.3fr) repeat(3,minmax(0,1fr));gap:18px;align-items:center">
+  <div style="display:flex;gap:12px;align-items:center"><span class="ico" style="--tint:var(--water-tint);--uink:var(--water-ink)"><svg><use href="#i-plug"/></svg></span>
+    <div><h2 style="margin:0">Water–energy link</h2><span class="muted">Pumping is usually a water utility's largest electricity bill. Estimated from run-time × rated pump power.</span></div></div>
+  <div><span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Pump energy</span><div style="font-size:22px;font-weight:700">{{ ov.nexus.pump_kwh|num:0 }} <small class="muted">kWh</small></div></div>
+  <div><span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Pump energy cost</span><div style="font-size:22px;font-weight:700">₹ {{ ov.nexus.pump_cost|num:0 }}</div></div>
+  <div><span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Wasted · dry runs, overflows</span><div style="font-size:22px;font-weight:700" class="h-bad">{{ ov.nexus.wasted_kwh|num:0 }} <small class="muted">kWh</small></div></div>
+</section>
+
+<section class="ai-card" style="margin-top:16px">
+  <h2>AI suggestions · whole utility</h2>
+  <div id="brief"><span class="spinner"></span> Reading the energy, meter and water findings…</div>
+</section>
+
+<div class="grid g2" style="margin-top:16px">
+  <section class="card"><h2>Issues by type <span class="sub">· colour = utility</span></h2>
+    <div style="display:flex;gap:14px;font-size:12px;margin:-4px 0 8px" class="muted"><span><i class="dot energy"></i> Energy</span><span><i class="dot meters"></i> Smart meters</span><span><i class="dot solar"></i> Solar</span><span><i class="dot water"></i> Water</span></div>
+    <div class="chart tall"><canvas id="c-issues"></canvas></div></section>
+  <section class="card"><h2>Fleet load shape <span class="sub">· average MW by hour, last 30 days</span></h2><div class="chart tall"><canvas id="c-profile"></canvas></div></section>
+</div>
+
+<div class="section-head"><h2>Top issues across energy, meters, solar and water</h2><a class="btn" href="/alerts/">All alerts →</a></div>
+{% include "hub/partials/findings.html" %}
+{{ charts|json_script:"charts" }}
+{% endblock %}
+{% block scripts %}<script>
+const C = UH.data('charts');
+loadBrief(document.getElementById('brief'), 'all');
+const spark = {plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{display:false}}};
+const e60 = {day:C.energy_daily.day.slice(-60), mwh:C.energy_daily.mwh.slice(-60)};
+UH.chart('sp-energy', {type:'line', data:{labels:e60.day, datasets:[{label:'MWh / day', data:e60.mwh, borderColor:UH.energy, fill:true, backgroundColor:c => UH.fill(c, UH.energy)}]}, options:spark});
+UH.chart('sp-water', {type:'bar', data:{labels:C.runtime.day, datasets:[{label:'Pump hours', data:C.runtime.h, backgroundColor:UH.water}]}, options:spark});
+if (C.solar) UH.chart('sp-solar', {type:'bar', data:{labels:C.solar.p, datasets:[{label:'MWh, 30 days', data:C.solar.mwh, backgroundColor:UH.solar}]}, options:{plugins:{legend:{display:false}}, scales:{y:{display:false}, x:{grid:{display:false}, ticks:{color:cssv('--ink-2')}}}}});
+UH.chart('c-issues', {type:'bar', data:{labels:C.issues.label, datasets:[{label:'Findings', data:C.issues.n, backgroundColor:C.issues.utility.map(u => UH[u]),
+  borderRadius:{topRight:4, bottomRight:4, topLeft:0, bottomLeft:0}}]}, options:{indexAxis:'y', scales:{x:{grid:{color:cssv('--grid')}, ticks:{color:cssv('--axis')}}, y:{grid:{display:false}, ticks:{color:cssv('--ink-2'), font:{size:11.5}}}}}});
+UH.chart('c-profile', {type:'bar', data:{labels:C.profile.h.map(h => String(h).padStart(2, '0') + ':00'), datasets:[{label:'Average MW', data:C.profile.mw, backgroundColor:UH.energy}]}});
+</script>{% endblock %}

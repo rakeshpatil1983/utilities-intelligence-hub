@@ -1,0 +1,98 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Smart meters · meter{% endblock %}
+{% block kind %}meter{% endblock %}
+{% block content %}
+<p class="muted back-link" style="margin:0"><a href="/meters/">← Smart meters</a></p>
+<h1><span class="ico" style="--tint:var(--meters-tint);--uink:var(--meters-ink)"><svg><use href="#i-gauge"/></svg></span>Meter {{ m.meter_id }}</h1>
+<p class="lead">{% if m.feeder_id %}{{ m.feeder_name|default:m.feeder_id }} → <a href="/meters/?dt={{ m.dt_id }}">{{ m.dt_id }}</a> · {% endif %}evidence from {{ m.source_combo }}</p>
+<div class="kpis">
+  <div class="kpi"><span>Meter health (MHI)</span><strong class="h-{% if m.mhi_score >= 80 %}good{% elif m.mhi_score >= 50 %}warn{% else %}bad{% endif %}">{{ m.mhi_score }} <small>/ 100</small></strong><small>{{ m.mhi_band }}</small></div>
+  <div class="kpi"><span>Predicted failure</span><strong style="font-size:17px">{{ m.mhi_failure_window }}</strong></div>
+  <div class="kpi"><span>Fault type</span><strong style="font-size:15px">{% for c in m.categories %}{{ c.1 }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</strong></div>
+</div>
+<div class="dtabs" style="--accent:var(--meters)">
+  <button data-tab="summary">Summary</button><button data-tab="predictive">Predictive</button>{% if has_logs %}<button data-tab="readings">Interval readings</button>{% endif %}{% if has_daily %}<button data-tab="daily">Daily register</button>{% endif %}{% if rows %}<button data-tab="evidence">Evidence rows</button>{% endif %}<button data-tab="ask">AI suggestions</button>
+</div>
+<div class="dpane" data-pane="summary">
+<div class="grid g2">
+  <section class="card">
+    <h2>Diagnosis</h2>
+    <p style="font-size:15px;font-weight:600;margin:0 0 6px">{{ m.diagnosis_en|default:"No fault signal" }}</p>
+    {% if m.diagnosis_hi %}<p class="muted" style="margin:0 0 10px">{{ m.diagnosis_hi }}</p>{% endif %}
+    <table>
+      <tr><th style="width:150px">Events</th><td>{{ m.event_faults|default:"—" }}</td></tr>
+      <tr><th>Load profile</th><td>{{ m.blp_faults|default:"—" }}</td></tr>
+      <tr><th>Daily reading</th><td>{{ m.dlp_faults|default:"—" }}</td></tr>
+      <tr><th>Why it matters</th><td>{{ m.why_en|default:"—" }}</td></tr>
+      <tr><th>Evidence</th><td>{{ m.evidence_en|default:"—" }}</td></tr>
+      <tr><th>How the score was built</th><td class="muted">{{ m.mhi_reasons|default:"—" }}</td></tr>
+    </table>
+  </section>
+  <section class="card" style="border-top:4px solid var(--meters)">
+    <h2>Field action</h2>
+    <p style="font-size:15px">{{ m.action }}</p>
+    {% if m.corrective_action_hi and 'dashboard' not in m.corrective_action_en %}<p class="muted">{{ m.corrective_action_hi }}</p>{% endif %}
+    {% if m.preventive_action_en %}<p class="muted" style="font-size:12px"><b>Afterwards:</b> {{ m.preventive_action_en }}</p>{% endif %}
+  </section>
+</div>
+</div>
+<div class="dpane" data-pane="predictive">
+<div class="kpis">
+  <div class="kpi"><span>Predicted failure</span><strong style="font-size:18px" class="h-{% if m.mhi_score >= 80 %}good{% elif m.mhi_score >= 50 %}warn{% else %}bad{% endif %}">{{ m.mhi_failure_window }}</strong><small>{% if pred.to %}between {{ pred.from|date:"d M" }} and {{ pred.to|date:"d M Y" }}{% else %}no failure expected{% endif %}</small></div>
+  <div class="kpi"><span>Health now</span><strong>{{ m.mhi_score }}<small> / 100</small></strong><small>{{ m.mhi_band }}</small></div>
+  <div class="kpi"><span>Usage · next 7 days</span><strong>{% if pred.avg is not None %}{{ pred.avg|num:1 }}<small> kWh/day</small>{% else %}—{% endif %}</strong><small>average of the last 14 days</small></div>
+  <div class="kpi"><span>Register falls</span><strong class="{% if pred.drops %}h-bad{% endif %}">{{ pred.drops }}</strong><small>cumulative kWh must never fall</small></div>
+</div>
+<div class="grid g2" style="margin-top:14px">
+  <section class="card"><h2>What drives the prediction</h2>{% for x in pred.drivers %}<p style="margin:6px 0"><span class="sev warning">signal</span> {{ x }}</p>{% empty %}<p class="muted">No fault signal.</p>{% endfor %}
+    <p class="pnote">{{ m.mhi_reasons|default:"" }}</p></section>
+  <section class="card"><h2>Daily energy · next 7 days</h2>{% if pred.avg is not None %}<div class="chart"><canvas id="c-pred"></canvas></div>{% else %}<p class="muted">This meter sends no daily readings, so its usage is not forecast; the failure prediction comes from its events and load profile.</p>{% endif %}</section>
+</div>
+</div>
+{% if has_logs %}
+<div class="dpane" data-pane="readings"><div class="grid g2">
+  <section class="card"><h2>Current <span class="sub">· A, interval readings</span></h2><div class="chart"><canvas id="c1"></canvas></div></section>
+  <section class="card"><h2>Voltage <span class="sub">· V</span></h2><div class="chart"><canvas id="c1v"></canvas></div></section>
+  <section class="card"><h2>Energy per interval <span class="sub">· kWh</span></h2><div class="chart"><canvas id="c2"></canvas></div></section>
+  <section class="card"><h2>Power factor</h2><div class="chart"><canvas id="c2p"></canvas></div></section>
+</div></div>{% endif %}
+{% if has_daily %}<div class="dpane" data-pane="daily"><div class="grid g2">
+  <section class="card"><h2>Daily energy <span class="sub">· kWh</span></h2><div class="chart"><canvas id="c3"></canvas></div></section>
+  <section class="card"><h2>Cumulative register <span class="sub">· kWh — must never fall</span></h2><div class="chart"><canvas id="c3r"></canvas></div></section>
+</div></div>{% endif %}
+<div class="dpane" data-pane="ask">
+<section class="ai-card"><h2>AI suggestions · meter {{ m.meter_id }}</h2><div id="brief"><span class="spinner"></span> Reading this meter's signals…</div>
+  <form id="ask" style="display:flex;gap:8px;margin-top:12px"><input name="q" placeholder="Ask about this meter…" style="flex:1;padding:8px 10px;border-radius:8px;border:none;font:inherit"><button class="btn primary">Ask</button></form>
+  <div id="answer" style="white-space:pre-wrap;margin-top:8px"></div></section>
+</div>
+{% if rows %}<div class="dpane" data-pane="evidence"><h2 style="margin:0 0 8px">Latest interval readings (evidence)</h2>
+<div class="table-wrap" style="max-height:420px"><table>
+<thead><tr><th>Time</th><th class="num">Voltage V</th><th class="num">Current A</th><th class="num">PF</th><th class="num">kWh</th><th class="num">Demand kW</th></tr></thead>
+<tbody>{% for r in rows reversed %}<tr><td>{{ r.ts|date:"d M Y H:i" }}</td>
+<td class="num {% if r.voltage is not None and r.current and r.voltage < 50 %}bad{% elif r.voltage > 270 %}bad{% endif %}">{{ r.voltage|num:1 }}</td>
+<td class="num {% if r.current > 50 %}bad{% endif %}">{{ r.current|num:2 }}</td><td class="num">{{ r.power_factor|num:2 }}</td><td class="num">{{ r.interval_kwh|num:3 }}</td><td class="num">{{ r.demand_kw|num:2 }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{{ chart|json_script:"chart" }}{% csrf_token %}
+<style>.pnote{font-size:12px;color:var(--muted);margin:8px 0 0}</style>
+{% endblock %}
+{% block scripts %}<script>
+const D = UH.data('chart'), aid = '{{ m.meter_id }}';
+loadBrief(document.getElementById('brief'), 'meters', aid);
+const line = (label, data, color, extra) => Object.assign({label, data, borderColor:color, backgroundColor:color, pointRadius:0, borderWidth:2, tension:.2, spanGaps:true}, extra||{});
+if (D.ts.length) {
+  UH.chart('c1', {type:'line', data:{labels:D.ts, datasets:[line('Current A', D.i, UH.meters, {fill:true, backgroundColor:c => UH.fill(c, UH.meters)})]}});
+  UH.chart('c1v', {type:'line', data:{labels:D.ts, datasets:[line('Voltage V', D.v, UH.water)]}});
+  UH.chart('c2', {type:'bar', data:{labels:D.ts, datasets:[{label:'kWh', data:D.kwh, backgroundColor:UH.meters}]}});
+  UH.chart('c2p', {type:'line', data:{labels:D.ts, datasets:[line('PF', D.pf, UH.energy)]}, options:{scales:{y:{min:0, max:1}}}});
+}
+if (D.d_ts.length) {
+  UH.chart('c3', {type:'bar', data:{labels:D.d_ts, datasets:[{label:'Daily kWh', data:D.d_kwh, backgroundColor:UH.meters}]}});
+  UH.chart('c3r', {type:'line', data:{labels:D.d_ts, datasets:[line('Register kWh', D.d_reg, cssv('--ink'), {pointRadius:3})]}});
+}
+if (D.pred && D.pred.fc.some(x => x !== null)) UH.chart('c-pred', {type:'bar', data:{labels:D.pred.day, datasets:[{label:'kWh', data:D.pred.kwh, backgroundColor:UH.meters},
+  {label:'Projected', data:D.pred.fc, backgroundColor:UH.alpha(UH.meters, .35)}]}, options:{scales:{x:{stacked:true}}}});
+document.getElementById('ask').addEventListener('submit', e => {
+  e.preventDefault(); const out = document.getElementById('answer'); out.innerHTML = '<span class="spinner"></span>';
+  fetch('/ai/ask.json', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
+    body:JSON.stringify({question:e.target.q.value, scope:'meters', asset:aid})}).then(r => r.json()).then(d => out.textContent = d.answer);
+});
+</script>{% endblock %}

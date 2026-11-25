@@ -1,0 +1,32 @@
+{% extends "hub/base.html" %}
+{% block crumb %}Ask AI{% endblock %}
+{% block content %}
+<h1><span class="ico"><svg><use href="#i-spark"/></svg></span>Ask AI about the utility</h1>
+<p class="lead">Questions are answered from the live analytics of both utilities (KPIs and findings), not from general knowledge.</p>
+{% if not ai_on %}<div class="notice">AI suggestions are not configured (OPENROUTER_API_KEY / OPENROUTER_MODEL in .env); answers fall back to the rule-based summary.</div>{% endif %}
+<section class="ai-card">
+  <h2>Ask a question</h2>
+  <form id="ask" style="display:flex;gap:8px;flex-wrap:wrap">
+    <select name="scope" style="padding:8px;border-radius:8px;border:1px solid var(--line);font:inherit"><option value="all">Energy + water</option><option value="energy">Energy</option><option value="meters">Smart meters</option><option value="solar">Solar</option><option value="water">Water</option></select>
+    <input name="q" placeholder="e.g. Which assets should we fix first?" style="flex:1;min-width:240px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);font:inherit">
+    <button class="btn primary">Ask</button>
+  </form>
+  <div class="filters" style="margin-top:12px">{% for e in examples %}<a href="#" onclick="ask(this.textContent);return false">{{ e }}</a>{% endfor %}</div>
+  <div id="answer" style="white-space:pre-wrap;margin-top:12px;font-size:15px;line-height:1.6"></div>
+</section>
+{% csrf_token %}
+{% endblock %}
+{% block scripts %}<script>
+const f = document.getElementById('ask'), out = document.getElementById('answer');
+// The model answers in light markdown: escape everything, then render only **bold** and "- " bullets.
+function render(md){
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc(md || '').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^- /gm, '• ');
+}
+function ask(q){
+  f.q.value = q; out.innerHTML = '<span class="spinner dark"></span> Thinking over the readings…';
+  fetch('/ai/ask.json', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
+    body:JSON.stringify({question:q, scope:f.scope.value})}).then(r => r.json()).then(d => out.innerHTML = render(d.answer)).catch(() => out.textContent = 'Request failed.');
+}
+f.addEventListener('submit', e => { e.preventDefault(); ask(f.q.value); });
+</script>{% endblock %}

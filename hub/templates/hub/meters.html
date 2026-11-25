@@ -1,0 +1,107 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Smart meters{% endblock %}
+{% block content %}
+<h1><span class="ico" style="--tint:var(--meters-tint);--uink:var(--meters-ink)"><svg><use href="#i-gauge"/></svg></span>Smart meters · consumer metering (AMI)</h1>
+{% if not s %}<div class="notice">Smart-meter results are not imported yet. Run <span class="mono">manage.py import_meters</span>.</div>{% else %}
+<p class="lead">{{ s.total|num:0 }} consumer meters on {{ s.feeders }} feeders and {{ s.dts }} DTs. Each meter has a health index (MHI) built from its
+events, block load profile and daily readings, a predicted failure window, and the field action. DT roll-ups compare each DT with the meters below it.</p>
+<div class="kpis">
+  {% for b in s.bands %}<a class="kpi" style="text-decoration:none;color:inherit" href="?band={{ b.band }}"><span>{{ b.band }}</span><strong{% if b.band == 'Critical' %} style="color:var(--bad)"{% endif %}>{{ b.n|num:0 }}</strong><small>avg MHI {{ b.mhi|num:0 }}</small></a>{% endfor %}
+  <div class="kpi"><span>Likely to fail ≤ 1 month</span><strong>{{ s.fail_within_month|num:0 }}</strong><small>+ {{ s.fail_if_repeated|num:0 }} if the fault repeats</small></div>
+  <div class="kpi"><span>DT twin</span><strong>{{ s.twin.Critical|default:0 }} / {{ s.twin.Warning|default:0 }}</strong><small>critical / warning DTs</small></div>
+</div>
+<h2 style="margin:16px 0 8px">Meters {% if q.band or q.cat or q.feeder or q.dt or q.q %}<span class="muted" style="font-weight:400">· filtered</span>{% endif %} <span class="muted" style="font-weight:400">· {{ total|num:0 }} found, worst health first</span></h2>
+<form class="filters" method="get">
+  <input name="q" value="{{ q.q|default:'' }}" placeholder="Meter number…" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font:inherit">
+  <select name="band" style="padding:6px;border-radius:8px;border:1px solid var(--line);font:inherit"><option value="">All bands</option>{% for b in s.bands %}<option {% if q.band == b.band %}selected{% endif %}>{{ b.band }}</option>{% endfor %}</select>
+  <select name="cat" style="padding:6px;border-radius:8px;border:1px solid var(--line);font:inherit"><option value="">All fault types</option>{% for c in s.categories %}<option value="{{ c.key }}" {% if q.cat == c.key %}selected{% endif %}>{{ c.label }}</option>{% endfor %}</select>
+  {% if q.feeder %}<input type="hidden" name="feeder" value="{{ q.feeder }}"><span class="util meters">feeder {{ q.feeder }}</span>{% endif %}
+  {% if q.dt %}<input type="hidden" name="dt" value="{{ q.dt }}"><span class="util meters">{{ q.dt }}</span>{% endif %}
+  <button class="btn primary">Filter</button> <a href="/meters/">Clear</a>
+</form>
+{% if board %}{% with L=board.lanes %}
+<div class="kpis lanes" style="margin-top:12px">
+  <a class="kpi" href="?cat=tamper" style="text-decoration:none;color:inherit;border-left:4px solid var(--critical)"><span>Wrong installation focus</span><strong>{{ L.inst|num:0 }}</strong><small>phase, neutral, CT circuit and wiring signs</small></a>
+  <div class="kpi" style="border-left:4px solid var(--warning)"><span>Meter damage voltage risk</span><strong>{{ L.ov|num:0 }}</strong><small>voltage above 300 V</small></div>
+  <a class="kpi" href="?cat=over_current" style="text-decoration:none;color:inherit;border-left:4px solid var(--warning)"><span>Over-current stress</span><strong>{{ L.oc|num:0 }}</strong><small>can heat terminals or damage the meter</small></a>
+  <div class="kpi" style="border-left:4px solid var(--critical)"><span>Meter may fail</span><strong>{{ L.fail|num:0 }}</strong><small>correlated evidence of near-term failure</small></div>
+  <div class="kpi" style="border-left:4px solid var(--warning)"><span>Loose contact</span><strong>{{ L.loose|num:0 }}</strong><small>V and kWh dropping while current flows</small></div>
+  <div class="kpi" style="border-left:4px solid var(--warning)"><span>RTC clock drift</span><strong>{{ L.rtc|num:0 }}</strong><small>≥ 10 min off the head-end clock</small></div>
+</div>{% endwith %}
+<h2 style="margin:18px 0 8px">Visual intelligence board</h2>
+<div class="grid g2">
+  <section class="card"><h2>MHI band distribution</h2><div class="chart"><canvas id="b-band"></canvas></div></section>
+  <section class="card"><h2>Signal source contribution <span class="sub">· meters with a signal from each source</span></h2><div class="chart"><canvas id="b-src"></canvas></div></section>
+  <section class="card"><h2>Source combination priority <span class="sub">· worst average health first, by MHI band</span></h2><div class="chart"><canvas id="b-combo"></canvas></div></section>
+  <section class="card"><h2>Top event signals</h2><div class="chart"><canvas id="b-ev"></canvas></div></section>
+</div>
+<section class="card" style="margin-top:14px"><h2>Event diagnosis with daily reading signals <span class="sub">· where event evidence and daily-reading issues appear together</span></h2><div class="chart" style="height:320px"><canvas id="b-piv"></canvas></div></section>
+{% endif %}
+<div class="qf" style="--qf-on:var(--meters)">
+  <a class="btn chip {% if not q.band and not q.cat and not q.pred %}on{% endif %}" href="/meters/">All<span class="n">{{ s.total|num:0 }}</span></a>
+  {% for b in s.bands %}{% if b.band != 'Optimal' %}<a class="btn chip {% if q.band == b.band and not q.cat %}on{% endif %}" href="?band={{ b.band }}">{{ b.band }}<span class="n">{{ b.n|num:0 }}</span></a>{% endif %}{% endfor %}
+  <a class="btn chip {% if q.pred == 'month' %}on{% endif %}" href="?pred=month">Predicted to fail ≤ 1 month<span class="n">{{ s.fail_within_month|num:0 }}</span></a>
+  <a class="btn chip {% if q.pred == 'repeat' %}on{% endif %}" href="?pred=repeat">Fails in 2–4 weeks if fault repeats<span class="n">{{ s.fail_if_repeated|num:0 }}</span></a>
+  {% for c in s.categories %}{% if c.n %}<a class="btn chip {% if q.cat == c.key %}on{% endif %}" href="?cat={{ c.key }}">{{ c.label }}<span class="n">{{ c.n|num:0 }}</span></a>{% endif %}{% endfor %}
+</div>
+<div class="md" style="--accent:var(--meters)">
+  <div class="md-left">
+    <input class="md-search" placeholder="Search this page…">
+    <span class="md-count"><b>{{ rows|length }}</b> on this page · {{ total|num:0 }} found</span>
+    <div class="md-list">{% for m in rows %}
+      <button class="md-item {% if m.mhi_score < 50 %}critical{% elif m.mhi_score < 80 %}warning{% else %}good{% endif %}" data-id="{{ m.meter_id }}" data-src="/meter/{{ m.meter_id }}/">
+        <div class="r1"><b>{{ m.meter_id }}</b><span style="font-size:12px;font-weight:600;color:var(--{% if m.mhi_band == 'Critical' %}critical{% elif m.mhi_band == 'Degradation' %}serious{% elif m.mhi_band == 'Watch' %}warning{% else %}good{% endif %})">{{ m.mhi_band }}</span><span class="health {% if m.mhi_score >= 80 %}good{% elif m.mhi_score >= 50 %}warn{% else %}bad{% endif %}">{{ m.mhi_score }}</span></div>
+        <div class="sub">{{ m.mhi_failure_window }} · {{ m.feeder_id|default:"—" }} / {{ m.dt_id|default:"—" }}</div>
+        <div class="sub">{{ m.diagnosis_en|default:"No fault signal"|truncatechars:90 }}</div>
+        <div class="chipline">{% for c in m.categories %}<span class="sev {% if m.mhi_band == 'Critical' %}critical{% elif m.mhi_band == 'Degradation' or m.mhi_band == 'Watch' %}warning{% else %}info{% endif %}">{{ c }}</span>{% endfor %}</div>
+      </button>{% empty %}<p class="muted">No meters match.</p>{% endfor %}</div>
+    {% if pages > 1 %}<p>{% if page > 1 %}<a href="?{{ qs }}&page={{ page|add:-1 }}">← previous</a> · {% endif %}page {{ page }} of {{ pages }}{% if page < pages %} · <a href="?{{ qs }}&page={{ page|add:1 }}">next →</a>{% endif %}</p>{% endif %}
+  </div>
+  <div class="md-right"><iframe title="Meter insights"></iframe></div>
+</div>
+<h2 style="margin:22px 0 8px">Fleet view</h2>
+<div class="grid g3">
+  <section class="card"><h2>Meter health bands</h2><div class="chart"><canvas id="c-bands"></canvas></div></section>
+  <section class="card"><h2>Predicted failure window</h2><div class="chart"><canvas id="c-win"></canvas></div></section>
+  <section class="card"><h2>Fault type (critical + degrading meters)</h2><div class="chart"><canvas id="c-cat"></canvas></div></section>
+</div>
+<section class="ai-card" style="margin-top:14px"><h2>AI suggestions · smart meters</h2><div id="brief"><span class="spinner"></span> Reading the meter-health findings…</div></section>
+
+<div class="grid g2" style="margin-top:14px">
+  <section class="card"><h2>Feeders with failing meters</h2><div class="table-wrap" style="max-height:340px"><table>
+    <thead><tr><th>Feeder</th><th class="num">Meters</th><th class="num">DTs</th><th class="num">Avg MHI</th><th class="num">Critical</th><th class="num">Degrading</th></tr></thead>
+    <tbody>{% for f in feeders %}<tr><td><a href="?feeder={{ f.feeder_id }}">{{ f.feeder_name|default:f.feeder_id }}</a></td><td class="num">{{ f.meters|num:0 }}</td><td class="num">{{ f.dts }}</td>
+      <td class="num">{{ f.mhi|num:1 }}</td><td class="num" style="color:var(--bad)">{{ f.critical }}</td><td class="num">{{ f.degradation }}</td></tr>{% endfor %}</tbody></table></div></section>
+  <section class="card"><h2>DT hotspots (meters below the DT + digital twin)</h2><div class="table-wrap" style="max-height:340px"><table>
+    <thead><tr><th>DT</th><th class="num">Meters</th><th class="num">Critical</th><th class="num">Degrading</th><th>Twin</th><th class="num">V spread</th><th class="num">I gap</th><th class="num">Reporting</th></tr></thead>
+    <tbody>{% for d in hot_dts %}<tr><td><a href="?dt={{ d.dt_id }}">{{ d.dt_id }}</a></td><td class="num">{{ d.meters }}</td><td class="num" style="color:var(--bad)">{{ d.critical }}</td><td class="num">{{ d.degradation }}</td>
+      <td>{% if d.twin_status == 'Critical' %}<span class="sev critical">critical</span>{% elif d.twin_status == 'Warning' %}<span class="sev warning">warning</span>{% else %}<span class="muted">{{ d.twin_status|default:"—" }}</span>{% endif %}</td>
+      <td class="num">{{ d.voltage_spread|num:0 }} V</td><td class="num">{{ d.current_difference|num:1 }} A</td><td class="num">{{ d.completeness_pct|num:0 }} %</td></tr>{% endfor %}</tbody></table></div></section>
+</div>
+
+<p class="muted" style="font-size:12px">Source: predictive meter-health workspace (events, block load profile, daily load profile). Feeder / DT mapping is that workspace's planning topology until the GIS / MDM mapping is connected.</p>
+{{ charts|json_script:"charts" }}
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if s %}<script>
+const C = UH.data('charts');
+UH.master();
+if (C.board) {
+  const B = C.board, bc = {Critical:UH.critical, Degradation:UH.serious, Watch:UH.warning, Optimal:UH.good};
+  const hb = {indexAxis:'y', scales:{x:{grid:{color:cssv('--grid')}}, y:{grid:{display:false}, ticks:{color:cssv('--ink-2'), font:{size:11}, callback:function(v){const l=this.getLabelForValue(v);return l.length>38?l.slice(0,37)+'…':l;}}}}};
+  UH.chart('b-band', {type:'bar', data:{labels:C.bands.map(b => b.band), datasets:[{label:'Meters', data:C.bands.map(b => b.n), backgroundColor:C.bands.map(b => bc[b.band])}]}});
+  UH.chart('b-src', {type:'bar', data:{labels:B.sources.label, datasets:[{label:'Meters', data:B.sources.n, backgroundColor:[UH.meters, UH.water, UH.energy]}]}});
+  UH.chart('b-combo', {type:'bar', data:{labels:B.combo.label, datasets:B.combo.bands.map(b => ({label:b, data:B.combo.n[b], backgroundColor:bc[b]}))},
+    options:Object.assign({}, hb, {scales:{x:{stacked:true, grid:{color:cssv('--grid')}}, y:Object.assign({stacked:true}, hb.scales.y)}})});
+  UH.chart('b-ev', {type:'bar', data:{labels:B.events.label, datasets:[{label:'Meters', data:B.events.n, backgroundColor:UH.meters}]}, options:hb});
+  const pc = [UH.critical, UH.warning, UH.water, UH.serious];
+  UH.chart('b-piv', {type:'bar', data:{labels:B.pivot.label, datasets:B.pivot.series.map((d, i) => ({label:d, data:B.pivot.n[d], backgroundColor:pc[i % pc.length]}))},
+    options:{scales:{x:{stacked:true, ticks:{autoSkip:false, maxRotation:0, font:{size:10.5}, callback:function(v){const l=this.getLabelForValue(v);return l.length>26?[l.slice(0,26), l.slice(26,52)]:l;}}}, y:{stacked:true}}}});
+}
+loadBrief(document.getElementById('brief'), 'meters');
+const bandColor = {Critical:UH.critical, Degradation:UH.serious, Watch:UH.warning, Optimal:UH.good};
+UH.chart('c-bands', {type:'doughnut', data:{labels:C.bands.map(b => b.band), datasets:[{data:C.bands.map(b => b.n), backgroundColor:C.bands.map(b => bandColor[b.band]), borderColor:cssv('--surface'), borderWidth:2, spacing:2}]},
+  options:{cutout:'64%', scales:false, plugins:{legend:{display:true, position:'right', labels:{color:cssv('--ink-2'), usePointStyle:true, pointStyle:'rectRounded'}}}}});
+UH.chart('c-win', {type:'bar', data:{labels:C.windows.map(w => w.w), datasets:[{label:'Meters', data:C.windows.map(w => w.n), backgroundColor:UH.meters, borderRadius:{topRight:4, bottomRight:4, topLeft:0, bottomLeft:0}}]}, options:{indexAxis:'y', scales:{x:{grid:{color:cssv('--grid')}}, y:{grid:{display:false}, ticks:{color:cssv('--ink-2')}}}}});
+UH.chart('c-cat', {type:'bar', data:{labels:C.cats.map(c => c.label), datasets:[{label:'Meters', data:C.cats.map(c => c.n), backgroundColor:UH.meters, borderRadius:{topRight:4, bottomRight:4, topLeft:0, bottomLeft:0}}]}, options:{indexAxis:'y', scales:{x:{grid:{color:cssv('--grid')}}, y:{grid:{display:false}, ticks:{color:cssv('--ink-2')}}}}});
+</script>{% endif %}{% endblock %}

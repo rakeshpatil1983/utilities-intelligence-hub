@@ -1,0 +1,51 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Transformer intelligence{% endblock %}
+{% block content %}
+<h1><span class="ico" style="--tint:var(--energy-tint);--uink:var(--energy-ink)"><svg><use href="#i-shield"/></svg></span>Transformer intelligence</h1>
+<p class="lead">{{ rows|length }} monitored distribution transformers, ranked worst first by health index. Phase balance over the last 7 days, the next 7 days' load forecast and a five-month outlook — readings to {{ as_of|date:"d M Y H:i" }}.</p>
+<div class="kpis">
+  <div class="kpi"><span>Monitored</span><strong>{{ k.n }}</strong><small>{{ k.online }} reporting</small></div>
+  <div class="kpi"><span>Critical / warning</span><strong class="h-bad">{{ k.critical }}</strong><small>{{ k.warning }} with warnings</small></div>
+  <div class="kpi"><span>Overload risk · 7 days</span><strong{% if k.risk7 %} class="h-bad"{% endif %}>{{ k.risk7 }}</strong><small>P(overload) ≥ 30 %</small></div>
+  <div class="kpi"><span>Pass nameplate · 5 months</span><strong{% if k.over5 %} class="h-warn"{% endif %}>{{ k.over5 }}</strong><small>projected peak ≥ 100 %</small></div>
+  <div class="kpi"><span>Hot-spot alarm · 5 months</span><strong{% if k.hot5 %} class="h-warn"{% endif %}>{{ k.hot5 }}</strong><small>estimated ≥ 100 °C</small></div>
+  <div class="kpi"><span>Load imbalance</span><strong{% if k.imb %} class="h-warn"{% endif %}>{{ k.imb }}</strong><small>one or two phases carry the load</small></div>
+</div>
+
+<div class="qf" style="--qf-on:var(--energy)">
+  <button class="btn chip on" data-f="all">All</button>
+  <button class="btn chip" data-f="critical">Critical</button>
+  <button class="btn chip" data-f="risk7 over5 hot5">Predicted issue</button>
+  <button class="btn chip" data-f="imbalance">Load imbalance</button>
+  <button class="btn chip" data-f="risk7">Overload risk · 7 days</button>
+  <button class="btn chip" data-f="over5">Pass nameplate · 5 months</button>
+  <button class="btn chip" data-f="hot5">Hot-spot alarm · 5 months</button>
+  <span class="muted" style="align-self:center;margin-left:6px"><span class="md-count"><b>{{ rows|length }}</b> shown</span></span>
+</div>
+
+<div class="md" style="--accent:var(--energy)">
+  <div class="md-left">
+    <input class="md-search" placeholder="Search DT-xx or issue…">
+    <div class="md-list">{% for r in rows %}
+      <button class="md-item {% if r.a.health < 50 %}critical{% elif r.a.health < 80 %}warning{% else %}good{% endif %}" data-id="{{ r.a.asset_id }}" data-src="/transformer/{{ r.a.asset_id }}/" data-tags="{{ r.tags }}">
+        <div class="r1"><b>{{ r.a.asset_id }}</b>{% if not r.a.online %}<span class="sev critical">offline</span>{% endif %}<span class="health {{ r.a.health|health_class }}">{{ r.a.health }}</span></div>
+        <div class="sub">{{ r.a.rating_kva }} kVA · peak {{ r.a.load_pk|pct }}{% if r.d.forecast %} · P(overload) {{ r.d.forecast.max_p_overload }} %{% endif %}{% if r.d.first_over_month %} · passes {{ r.d.first_over_month.month|date:"M Y" }}{% endif %}</div>
+        {% with p=r.d.phase %}{% if p %}<div class="pb-bar" style="margin-top:6px;{% if not p.flagged %}opacity:.45{% endif %}">{% for x in p.shares %}<i class="pb-{{ forloop.counter }}" style="width:{{ x }}%"></i>{% endfor %}</div>
+        <div class="sub" style="font-size:11.5px">{{ p.shares_text }} · {{ p.text }}{% if p.heavy_peak_pct >= 100 %} · <b style="color:var(--critical)">{{ p.heavy }} peak {{ p.heavy_peak_pct }} %</b>{% endif %}</div>{% endif %}{% endwith %}
+        <div class="chipline">{% for f in r.a.findings|slice:":2" %}<span class="sev {{ f.severity }}">{{ f.title }}</span>{% endfor %}</div>
+      </button>{% endfor %}</div>
+  </div>
+  <div class="md-right"><iframe title="Transformer insights"></iframe></div>
+</div>
+<p class="muted" style="font-size:12px">Health index: 100 minus each finding's weight. Forecast: weekday × 15-minute profile of the last 4 weeks; P(overload) from the 8-week back-test spread. Five-month outlook: each transformer's own peak on the same dates last year × its year-on-year growth.</p>
+<style>
+.chip.on{background:var(--energy);color:#fff;border-color:var(--energy)}
+.pb-bar{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--line);max-width:240px}
+.pb-bar i{display:block;height:100%}.pb-1{background:#dc2626}.pb-2{background:#ca8a04}.pb-3{background:#2563eb}
+.pb-text{font-size:12px;color:var(--ink-2);margin-top:3px}.pb-hot{color:var(--critical)}
+.pb.ok .pb-bar{opacity:.5}.pb.ok .pb-text,.pb.ok .pb-text b:not(.pb-hot){color:var(--axis);font-weight:500}
+</style>
+{% endblock %}
+{% block scripts %}<script>
+UH.master();
+</script>{% endblock %}

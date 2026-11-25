@@ -1,0 +1,17 @@
+{% load hub %}<div class="table-wrap"><table>
+<thead><tr><th>Severity</th><th>Utility</th><th>Asset</th><th>Issue</th><th>Measured</th><th>Why it matters</th><th>Field action</th><th></th></tr></thead>
+<tbody>
+{% for f in findings %}
+<tr class="sev-{{ f.severity }}">
+  <td><span class="sev {{ f.severity }}">{{ f.severity }}</span></td>
+  <td><span class="util {{ f.utility }}">{% if f.utility == 'meters' %}meters{% else %}{{ f.utility }}{% endif %}</span></td>
+  <td><a href="{% if f.url %}{{ f.url }}{% else %}/asset/{{ f.asset_id }}/{% endif %}"><b>{{ f.asset_label|default:f.asset_id }}</b></a></td>
+  <td><b>{{ f.title }}</b></td>
+  <td class="mono" style="font-size:12.5px">{{ f.value }}</td>
+  <td class="muted">{{ f.why }}</td>
+  <td>{{ f.action }}</td>
+  <td>{% if f.url %}<a class="btn" href="{{ f.url }}">Open</a>{% elif f.start %}<button class="btn" onclick="openEvidence('{{ f.asset_id }}','{{ f.start|iso }}','{{ f.end|iso }}','{{ f.title|escapejs }}')">Evidence</button>{% endif %}</td>
+</tr>
+{% empty %}<tr><td colspan="8" class="muted">No issues found.</td></tr>
+{% endfor %}
+</tbody></table></div>

@@ -1,0 +1,147 @@
+{% extends "hub/base.html" %}{% load hub %}
+{% block crumb %}Energy · {{ a.asset_id }}{% endblock %}
+{% block kind %}xfmr{% endblock %}
+{% block content %}
+<p class="muted back-link" style="margin:0"><a href="/energy/">← Energy · transformer intelligence</a></p>
+<h1><span class="ico" style="--tint:var(--energy-tint);--uink:var(--energy-ink)"><svg><use href="#i-shield"/></svg></span>{{ a.asset_id }} · {{ a.rating_kva }} kVA distribution transformer</h1>
+<p class="lead">Readings {{ a.first_seen|date:"d M Y" }} – {{ a.last_seen|date:"d M Y H:i" }} · <a href="/asset/{{ a.asset_id }}/">raw readings and evidence →</a></p>
+
+<div class="kpis">
+  <div class="kpi"><span>Health</span><strong class="h-{{ a.health|health_class }}">{{ a.health }} <small>/ 100</small></strong><small>{{ a.findings|length }} issue{{ a.findings|length|pluralize }}</small></div>
+  <div class="kpi"><span>Peak load 30 d</span><strong>{{ a.load_pk|pct }}</strong><small>{{ a.peak_kva|num:0 }} kVA</small></div>
+  {% if fc %}<div class="kpi"><span>Highest peak · next 7 days</span><strong class="{% if fc.max_peak_pct >= 100 %}h-bad{% endif %}">{{ fc.max_peak_pct|num:0 }} %</strong><small>P(overload) up to {{ fc.max_p_overload }} %</small></div>
+  <div class="kpi"><span>Load growth</span><strong>{{ fc.growth_pct|num:1 }} %<small>/yr</small></strong><small>same fortnight a year apart</small></div>{% endif %}
+  <div class="kpi"><span>Passes nameplate</span><strong class="{% if d.first_over_month %}h-warn{% endif %}">{% if d.first_over_month %}{{ d.first_over_month.month|date:"M Y" }}{% else %}not in 12 mo{% endif %}</strong><small>projected monthly peak</small></div>
+</div>
+
+<div class="dtabs" style="--accent:var(--energy)">
+  <button data-tab="summary">Summary</button><button data-tab="readings">Load &amp; voltage</button>{% if fc %}<button data-tab="forecast">Load forecast</button>{% endif %}<button data-tab="energy">Energy per day</button>{% if fc %}<button data-tab="capacity">Capacity plan</button>{% endif %}{% if d.outlook %}<button data-tab="predictive">Predictive</button>{% endif %}<button data-tab="issues">Issues &amp; evidence ({{ a.findings|length }})</button><button data-tab="ask">Ask AI</button>
+</div>
+<div class="dpane" data-pane="summary">
+<section class="card"><h2>Phase balance · last 7 days</h2>
+{% with p=d.phase %}{% if p %}
+  <div class="pb-bar" style="height:14px;max-width:none">{% for s in p.shares %}<i class="pb-{{ forloop.counter }}" style="width:{{ s }}%"></i>{% endfor %}</div>
+  <p style="margin:8px 0 0;font-size:15px"><b>{{ p.shares_text }}</b> — {{ p.text }}.{% if p.heavy_peak_pct >= 100 %} <b class="pb-hot">{{ p.heavy }} phase peaked at {{ p.heavy_peak_pct }} % of its rated current</b> although the transformer as a whole is {{ a.load_pk|pct }} loaded at peak.{% endif %}</p>
+  {% if p.flagged %}<p class="muted" style="margin:6px 0 0">Move single-phase connections from the {{ p.heavy }} phase to the {{ p.light }} phase; check the neutral lug.</p>{% endif %}
+{% else %}<p class="muted">No phase data in the last 7 days.</p>{% endif %}{% endwith %}
+</section>
+<section class="card" style="margin-top:14px"><h2>Top issues</h2>
+{% for f in a.findings|slice:":4" %}<p style="margin:6px 0"><span class="sev {{ f.severity }}">{{ f.severity }}</span> <b>{{ f.title }}</b> <span class="muted">· {{ f.value }}</span><br><span style="font-size:13px">{{ f.action }}</span></p>{% empty %}<p class="muted">No issues found.</p>{% endfor %}
+</section>
+</div>
+
+{% if fc %}
+<div class="dpane" data-pane="forecast">
+<section class="card"><h2>Load forecast · next 7 days <span class="sub">· 15-minute steps, ±1σ band ({{ fc.sigma_pct|num:1 }} %), red line = nameplate</span></h2>
+  <div class="chart" style="height:300px"><canvas id="c-fc"></canvas></div>
+  <div class="days">{% for x in fc.days %}<div class="{% if x.p_overload >= 50 %}hot{% elif x.p_overload >= 20 %}warm{% endif %}">{{ x.day|date:"D d M" }}<b>{{ x.peak_pct|num:0 }} %</b>{{ x.peak_kva }} kVA<br>P(overload) {{ x.p_overload }} %{% if x.overload_h %}<br>{{ x.overload_h }} h over{% endif %}</div>{% endfor %}</div>
+  <p class="muted" style="font-size:12px;margin:8px 0 0">Back-tested daily-peak error {{ fc.mape_pct|num:1 }} % over the last 8 weeks.</p>
+</section>
+</div>
+<div class="dpane" data-pane="capacity">
+<div class="grid g2">
+  <section class="card"><h2>Monthly peak · next 12 months</h2><div class="chart"><canvas id="c-mon"></canvas></div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">{% if d.first_over_month %}First month above nameplate: <b>{{ d.first_over_month.month|date:"M Y" }}</b> — plan load transfer or augmentation before then.{% else %}Stays within nameplate all year.{% endif %}</p></section>
+  <section class="card"><h2>Capacity plan</h2><div class="table-wrap"><table>
+    <thead><tr><th>Month</th><th class="num">Peak</th><th class="num">kVA</th><th class="num">Headroom</th></tr></thead>
+    <tbody>{% for m in d.months %}<tr><td>{{ m.month|date:"M Y" }}</td><td class="num {% if m.status == 'critical' %}h-bad{% elif m.status == 'warning' %}h-warn{% endif %}">{{ m.peak_pct|num:0 }} %</td><td class="num">{{ m.peak_kva }}</td><td class="num {% if m.headroom_kva < 0 %}h-bad{% endif %}">{{ m.headroom_kva }} kVA</td></tr>{% endfor %}</tbody></table></div></section>
+</div>
+</div>
+{% endif %}
+
+{% if d.outlook %}
+<div class="dpane" data-pane="predictive">
+<h2 style="margin:0 0 4px">Growth outlook · next 5 months</h2>
+<p class="muted" style="margin:0 0 10px">Solid = measured daily peak, dashed = projection (same dates last year × {{ fc.growth_pct|num:1 }} %/yr growth). Temperatures are <b>estimated</b> from load with the IEC 60076-7 thermal model on a typical monthly ambient — the STMU does not measure them.</p>
+<div class="grid g3">{% for key, g in outlook %}
+  <section class="card"><h2>{{ g.label }}</h2><div class="chart" style="height:220px"><canvas id="c-{{ key }}"></canvas></div>
+    <div class="gstats">
+      <div><span>Now</span><b>{{ g.now|num:1 }}{% if key == 'load' %} %{% else %} °C{% endif %}</b></div>
+      <div><span>Projected peak</span><b>{% if g.proj_peak is not None %}{{ g.proj_peak|num:1 }}{% if key == 'load' %} %{% else %} °C{% endif %}{% else %}—{% endif %}</b>{% if g.proj_peak_day %}<small>{{ g.proj_peak_day|date:"d M Y" }}</small>{% endif %}</div>
+      <div><span>Alarm {{ g.warn|num:0 }}</span><b class="{% if g.days_warn and g.days_warn <= 60 %}h-bad{% elif g.days_warn %}h-warn{% endif %}">{% if g.days_warn %}in {{ g.days_warn }} d{% else %}not in a year{% endif %}</b>{% if g.date_warn %}<small>{{ g.date_warn|date:"d M Y" }}</small>{% endif %}</div>
+      <div><span>{{ g.crit_label }} {{ g.crit|num:0 }}</span><b class="{% if g.days_crit %}h-bad{% endif %}">{% if g.days_crit %}in {{ g.days_crit }} d{% else %}not in a year{% endif %}</b>{% if g.date_crit %}<small>{{ g.date_crit|date:"d M Y" }}</small>{% endif %}</div>
+    </div></section>
+{% endfor %}</div>
+</div>
+{% endif %}
+
+<div class="dpane" data-pane="readings"><div class="grid g2">
+  <section class="card"><h2>Load, last 7 days (kW)</h2><div class="chart"><canvas id="r1"></canvas></div></section>
+  <section class="card"><h2>Phase-to-neutral voltage (V)</h2><div class="chart"><canvas id="r2"></canvas></div></section>
+  <section class="card"><h2>Phase and neutral current (A)</h2><div class="chart"><canvas id="r3"></canvas></div></section>
+  <section class="card"><h2>Power quality, last 30 days</h2><div class="kpis" style="grid-template-columns:repeat(2,1fr)">
+    <div class="kpi"><span>Power factor</span><strong>{{ a.pf|num:2 }}</strong></div><div class="kpi"><span>Unbalance</span><strong>{{ a.unbal|pct }}</strong></div>
+    <div class="kpi"><span>Neutral current</span><strong>{{ a.in_ratio|pct }}</strong><small>of phase current</small></div><div class="kpi"><span>Supply</span><strong>{{ a.avail|pct }}</strong></div>
+    <div class="kpi"><span>THD voltage</span><strong>{{ a.thd_v|num:1 }} %</strong></div><div class="kpi"><span>Energy 30 d</span><strong>{{ a.kwh|num:0 }}<small> kWh</small></strong></div></div></section>
+</div></div>
+<div class="dpane" data-pane="energy">
+  <section class="card"><h2>Energy per day and next 7 days forecast (kWh)</h2><div class="chart" style="height:320px"><canvas id="r4"></canvas></div></section>
+</div>
+<div class="dpane" data-pane="ask">
+  <section class="ai-card"><h2>AI suggestions · {{ a.asset_id }}</h2><div id="brief"><span class="spinner"></span> Reading this transformer's data…</div>
+  <form id="ask" style="display:flex;gap:8px;margin-top:12px"><input name="q" placeholder="Ask about {{ a.asset_id }}…" style="flex:1;padding:8px 10px;border-radius:8px;border:none;font:inherit"><button class="btn primary">Ask</button></form>
+  <div id="answer" style="white-space:pre-wrap;margin-top:8px"></div></section>
+</div>
+<div class="dpane" data-pane="issues">
+{% with findings=a.findings %}{% include "hub/partials/findings.html" %}{% endwith %}
+</div>
+{{ chart|json_script:"chart" }}{% csrf_token %}
+<style>
+.pb-bar{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--line)}
+.pb-bar i{display:block;height:100%}.pb-1{background:#dc2626}.pb-2{background:#ca8a04}.pb-3{background:#2563eb}.pb-hot{color:var(--critical)}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:10px}
+.days div{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;font-size:12px;color:var(--ink-2)}
+.days b{display:block;font-size:18px;color:var(--ink);margin:2px 0}
+.days .hot{border-color:var(--critical);background:color-mix(in srgb, var(--critical) 8%, transparent)}.days .hot b{color:var(--critical)}
+.days .warm{border-color:var(--warning)}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gstats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}
+.gstats div{border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.gstats span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--axis)}
+.gstats b{display:block;font-size:14px}.gstats small{display:block;font-size:11px;color:var(--axis)}
+@media(max-width:1000px){.g3{grid-template-columns:1fr}.days{grid-template-columns:repeat(2,1fr)}}
+</style>
+{% endblock %}
+{% block scripts %}<script>
+const D = UH.data('chart');
+const pad = (a, before, after) => Array(before).fill(null).concat(a, Array(after).fill(null));
+const ref = (label, n, v, color) => ({label, data:Array(n).fill(v), borderColor:color, borderDash:[4,4], borderWidth:1, pointRadius:0, _ref:true});
+if (D.fc) {
+  const L = D.fc.actual_ts.concat(D.fc.fc_ts), nA = D.fc.actual_ts.length, s = D.fc.sigma / 100;
+  const f = pad(D.fc.fc, nA, 0);
+  UH.chart('c-fc', {type:'line', data:{labels:L.map(x => x.slice(5, 16).replace('T', ' ')), datasets:[
+    {label:'Measured load (%)', data:pad(D.fc.actual, 0, D.fc.fc_ts.length), borderColor:UH.energy},
+    {label:'Forecast (%)', data:f, borderColor:UH.meters, borderDash:[5,4]},
+    {label:'+1σ', data:f.map(v => v === null ? null : v * (1 + s)), borderColor:UH.alpha(UH.meters, .15), _ref:true},
+    {label:'−1σ', data:f.map(v => v === null ? null : v * (1 - s)), borderColor:UH.alpha(UH.meters, .15), backgroundColor:UH.alpha(UH.meters, .12), fill:'-1', _ref:true},
+    ref('Nameplate', L.length, 100, UH.critical)]},
+    options:{plugins:{legend:{labels:{filter:i => !i.text.includes('σ')}}}, scales:{x:{ticks:{maxTicksLimit:14}}, y:{beginAtZero:true, ticks:{callback:v => v + ' %'}}}}});
+  UH.chart('c-mon', {type:'bar', data:{labels:D.mon.m, datasets:[
+    {label:'Projected peak (%)', data:D.mon.pct, backgroundColor:D.mon.pct.map(v => v >= 120 ? UH.critical : v >= 100 ? UH.warning : UH.energy)},
+    {type:'line', ...ref('Nameplate', D.mon.m.length, 100, UH.critical)}]},
+    options:{scales:{y:{beginAtZero:true, ticks:{callback:v => v + ' %'}}}}});
+}
+const R = D.rd, rl = (label, data, color, extra) => Object.assign({label, data, borderColor:color, backgroundColor:color, pointRadius:0, borderWidth:2, tension:.2, spanGaps:true}, extra||{});
+UH.chart('r1', {type:'line', data:{labels:R.ts, datasets:[rl('kW', R.kw, UH.energy, {fill:true, backgroundColor:c => UH.fill(c, UH.energy)})]}});
+UH.chart('r2', {type:'line', data:{labels:R.ts, datasets:[rl('R–N', R.vr, UH.energy), rl('Y–N', R.vy, UH.meters), rl('B–N', R.vb, UH.water),
+  rl('−6 % limit', R.ts.map(() => R.v_lo), cssv('--axis'), {borderDash:[5,4], borderWidth:1}), rl('+6 % limit', R.ts.map(() => R.v_hi), cssv('--axis'), {borderDash:[5,4], borderWidth:1})]}});
+UH.chart('r3', {type:'line', data:{labels:R.ts, datasets:[rl('I R', R.ir, UH.energy), rl('I Y', R.iy, UH.meters), rl('I B', R.ib, UH.water), rl('I N', R.in, cssv('--ink')),
+  rl('Rated current', R.ts.map(() => R.rated_a), cssv('--axis'), {borderDash:[5,4], borderWidth:1})]}});
+UH.chart('r4', {type:'bar', data:{labels:R.day.concat(R.fc_day), datasets:[{label:'kWh', data:R.kwh, backgroundColor:UH.energy},
+  {label:'Forecast', data:R.day.map(() => null).concat(R.fc_kwh), backgroundColor:UH.alpha(UH.energy, .35)}]}, options:{scales:{x:{stacked:true, ticks:{maxTicksLimit:10}}}}});
+loadBrief(document.getElementById('brief'), 'energy', '{{ a.asset_id }}');
+document.getElementById('ask').addEventListener('submit', e => {
+  e.preventDefault(); const out = document.getElementById('answer'); out.innerHTML = '<span class="spinner"></span>';
+  fetch('/ai/ask.json', {method:'POST', headers:{'Content-Type':'application/json', 'X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value},
+    body:JSON.stringify({question:e.target.q.value, scope:'energy', asset:'{{ a.asset_id }}'})}).then(r => r.json()).then(d => out.textContent = d.answer);
+});
+const COL = {load:UH.energy, oti:UH.warning, wti:UH.critical};
+for (const [k, g] of Object.entries(D.outlook || {})) {
+  const L = g.day.concat(g.proj_day);
+  UH.chart('c-' + k, {type:'line', data:{labels:L.map(x => x.slice(5, 10)), datasets:[
+    {label:'Measured' + (k === 'load' ? '' : ' (est.)'), data:pad(g.actual, 0, g.proj_day.length), borderColor:COL[k], borderWidth:1.5},
+    {label:'Projection', data:pad(g.proj, g.day.length, 0), borderColor:UH.meters, borderDash:[6,4], spanGaps:true},
+    ref('Alarm', L.length, g.warn, UH.warning), ref(g.crit_label, L.length, g.crit, UH.critical)]},
+    options:{scales:{x:{ticks:{maxTicksLimit:8}}, y:{ticks:{callback:v => v + (k === 'load' ? ' %' : ' °C')}}}}});
+}
+</script>{% endblock %}
