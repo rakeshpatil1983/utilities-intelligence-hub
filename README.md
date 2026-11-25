@@ -2,6 +2,10 @@
 
 Team Teknovate · 2026 oneM2M Hackathon · **oneM2M-compliant data path** (see [oneM2M compliance](#onem2m-compliance))
 
+> **Use at your own risk.** This is a hackathon prototype provided "as is", without warranty of any kind. Predictions,
+> health scores and AI suggestions are decision aids, not instructions: verify on site and follow your utility's safety
+> rules before any field work. The authors accept no liability for any loss or damage from its use.
+
 One Django dashboard for **distribution transformers**, **consumer smart meters**, **solar plants** and **drinking-water supply**: every asset is scored from its own
 readings, issues are listed with the evidence rows behind them, and AI suggestions turn the findings into a work plan.
 **No login** — open workspace for the hackathon, plus an open JSON API for teams.
