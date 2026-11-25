@@ -2,6 +2,8 @@
 
 Team Teknovate · 2026 oneM2M Hackathon · **oneM2M-compliant data path** (see [oneM2M compliance](#onem2m-compliance))
 
+**Project write-up on hackster.io:** https://www.hackster.io/rakesh28/utilities-intelligence-hub-predict-faults-before-the-alarm-71cd2c
+
 > **Use at your own risk.** This is a hackathon prototype provided "as is", without warranty of any kind. Predictions,
 > health scores and AI suggestions are decision aids, not instructions: verify on site and follow your utility's safety
 > rules before any field work. The authors accept no liability for any loss or damage from its use.
